@@ -1,4 +1,4 @@
-# Tribunal de Agentes
+# Agent Tribunal
 
 Proyecto Open Source en **Node.js (ESM) + Express** con arquitectura modular para conectar múltiples agentes de IA (`claude`, `codex`, `agy` y modelos locales como **Ollama**), hacer que debatan y difieran entre sí, y permitir que el usuario audite y cuestione sus resultados.
 
