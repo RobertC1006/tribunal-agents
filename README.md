@@ -75,6 +75,11 @@ para confirmar. Esc vuelve al menú anterior o cancela la apertura.
 El menú `configurar` usa el mismo selector para cambiar modelos y elegir los
 participantes predeterminados. Puedes crear un perfil a partir de otro y elegir
 «Escribir otro ID» si el modelo no aparece. Los cambios se guardan en `tribunal.config.json`.
+La fila activa se resalta con fondo azul, las marcas aparecen en verde y el modelo
+guardado lleva la etiqueta «actual». Re Pág y Av Pág permiten recorrer catálogos largos.
+Codex usa el catálogo local del CLI, Claude muestra los modelos y alias documentados,
+y Antigravity consulta `agy models`. Si esa consulta falla, aparecen ejemplos oficiales
+con una etiqueta que indica que su disponibilidad está por verificar.
 `claude1` usa Fable 5.2 y `claude2` usa Opus 5.5 si están disponibles en tu cuenta de Claude Code.
 El último argumento indica cuántas rondas de debate habrá después de la apertura.
 El valor por defecto es `1`. Con `0` solo se ejecuta la apertura.

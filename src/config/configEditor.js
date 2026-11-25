@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { homedir } from "node:os";
-import path from "node:path";
-import { agentOptions, askLine, colorize, select } from "../terminal.js";
+import { agentColor, agentOptions, askLine, colorize, select } from "../terminal.js";
+import { modelCatalog } from "./modelCatalog.js";
 
 export function printAgents({ agents, defaultAgents }, print = console.log) {
   for (const { value: name, detail, color } of agentOptions(agents)) {
@@ -76,9 +75,14 @@ export async function editConfig({
 
         const profile = { ...agents[source] };
         const current = profile.model ?? "predeterminado del proveedor";
-        let model = interactive
-          ? await choose(`Modelo para ${name}`, await modelOptions(profile, agents), { selected: [profile.model ?? "-"] })
-          : await ask(`ID del modelo [${current}] (Enter para conservar, - para restablecer):`);
+        let model;
+        if (interactive) {
+          if (profile.type === "agy") print("Consultando el catálogo de Antigravity…");
+          const options = await modelOptions(profile, agents, agentColor(agents, source));
+          model = await choose(`Modelo para ${name}`, options, { selected: [profile.model ?? "-"] });
+        } else {
+          model = await ask(`ID del modelo [${current}] (Enter para conservar, - para restablecer):`);
+        }
         if (interactive && model === "") model = await ask("ID del modelo:");
         if (model === undefined) {
           if (interactive) continue;
@@ -131,20 +135,13 @@ export async function editConfig({
   }
 }
 
-async function modelOptions(profile, agents) {
+async function modelOptions(profile, agents, color) {
   const models = Object.values(agents)
     .filter((agent) => agent.type === profile.type && agent.model)
     .map((agent) => agent.model);
-  if (profile.type === "codex") {
-    const filename = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "models_cache.json");
-    try {
-      const cache = JSON.parse(await readFile(filename, "utf8"));
-      models.push(...cache.models.filter((model) => model.visibility === "list").map((model) => model.slug));
-    } catch {
-      // El usuario todavía puede elegir un modelo configurado o ingresar el ID.
-    }
-  }
-  const options = [...new Set(models)].map((model) => ({ value: model, label: model }));
+  const choices = new Map(models.map((id) => [id, { value: id, label: id }]));
+  for (const model of await modelCatalog(profile)) choices.set(model.value, model);
+  const options = [...choices.values()].map((choice) => ({ ...choice, color }));
   if (profile.type !== "ollama") options.push({ value: "-", label: "Predeterminado del proveedor" });
   options.push({ value: "", label: "Escribir otro ID" });
   return options;

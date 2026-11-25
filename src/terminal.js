@@ -53,17 +53,23 @@ export function select(title, options, {
       first = Math.min(Math.max(first, cursor - pageSize + 1), cursor);
       erase();
       const width = Math.max(1, (output.columns || 80) - 1);
-      output.write(`${colorize(title.slice(0, width), 1, output)}\n`);
+      output.write(`${colorize(title.slice(0, width), "1;96", output)}\n`);
       for (const [offset, option] of options.slice(first, first + pageSize).entries()) {
-        const pointer = first + offset === cursor ? "› " : "  ";
-        const check = multiple ? (marked.has(option.value) ? "[x] " : "[ ] ") : "";
+        const active = first + offset === cursor;
+        const checked = marked.has(option.value);
+        const pointer = active ? "› " : "  ";
+        const check = multiple ? (checked ? "[x] " : "[ ] ") : "";
         const label = option.label.slice(0, Math.max(0, width - pointer.length - check.length));
-        const detail = option.detail ? ` · ${option.detail}` : "";
+        const parts = [!multiple && checked ? "actual" : "", option.detail].filter(Boolean);
         const remaining = Math.max(0, width - pointer.length - check.length - label.length);
-        output.write(`${pointer}${check}${colorize(label, option.color, output)}${detail.slice(0, remaining)}\n`);
+        const detail = parts.length ? ` · ${parts.join(" · ")}`.slice(0, remaining) : "";
+        const row = active
+          ? colorize(`${pointer}${check}${label}${detail}`.padEnd(width), "1;30;106", output)
+          : `${pointer}${colorize(check, checked ? 92 : 90, output)}${colorize(label, option.color, output)}${colorize(detail, 90, output)}`;
+        output.write(`${row.trimEnd()}\n`);
       }
       const keys = multiple ? "↑↓ Mover · Espacio Marcar · Enter Aceptar · Esc Volver" : "↑↓ Mover · Enter Elegir · Esc Volver";
-      output.write(`${keys.slice(0, width)}\n`);
+      output.write(`${colorize(keys.slice(0, width), 96, output)}\n`);
       drawn = true;
     }
 
@@ -86,6 +92,8 @@ export function select(title, options, {
         case "c": if (key.ctrl) return cancel(); break;
         case "up": cursor = (cursor - 1 + options.length) % options.length; break;
         case "down": cursor = (cursor + 1) % options.length; break;
+        case "pageup": cursor = Math.max(0, cursor - pageSize); break;
+        case "pagedown": cursor = Math.min(options.length - 1, cursor + pageSize); break;
         case "space": {
           if (!multiple) return;
           const { value } = options[cursor];
