@@ -58,6 +58,10 @@ Escucha por defecto en `http://127.0.0.1:3000` (configurable con `HOST` y `PORT`
 - `GET /api/casos/:sessionId`
 - `POST /api/casos/:sessionId/cuestionar` — `{ "objection": "¿Y si hay 500 sesiones?" }`
 - `POST /api/casos/:sessionId/debatir` — `{ "targetAgents": ["claude", "codex"] }`
+- `POST /api/casos/:sessionId/destacados` — `{ "round": 1, "agent": "claude", "text": "fragmento", "note": "opcional" }`
+- `DELETE /api/casos/:sessionId/destacados/:highlightId`
+
+**Destacar fragmentos:** en el visor web selecciona texto de la respuesta de un agente y pulsa «📌 Destacar» (también `pnpm start destacar` o la herramienta MCP `destacar_fragmento`). El fragmento queda fijado en el caso y se envía a todos los magistrados en cada ronda siguiente hasta que lo quites.
 
 ## Arquitectura
 

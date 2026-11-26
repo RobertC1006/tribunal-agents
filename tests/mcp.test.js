@@ -119,9 +119,11 @@ test("servidor MCP responde initialize, tools/list y ejecuta abrir_caso, listar_
       "abrir_caso",
       "cuestionar_caso",
       "debatir_caso",
+      "destacar_fragmento",
       "inspeccionar_caso",
       "listar_agentes",
       "listar_casos",
+      "quitar_destacado",
     ]);
 
     const openRes = await rpc(3, "tools/call", {
@@ -151,6 +153,19 @@ test("servidor MCP responde initialize, tools/list y ejecuta abrir_caso, listar_
       },
     });
     assert.match(objRes.result.content[0].text, /CUESTIONAMIENTO/i);
+
+    const hlRes = await rpc(6, "tools/call", {
+      name: "destacar_fragmento",
+      arguments: { sessionId: idMatch[0], round: 1, agent: "sim1", text: "fragmento clave", note: "ojo" },
+    });
+    assert.equal(hlRes.result.isError, undefined);
+    assert.match(hlRes.result.content[0].text, /Destacados[\s\S]*d1[\s\S]*fragmento clave/);
+
+    const unRes = await rpc(7, "tools/call", {
+      name: "quitar_destacado",
+      arguments: { sessionId: idMatch[0], highlightId: "d1" },
+    });
+    assert.doesNotMatch(unRes.result.content[0].text, /fragmento clave/);
   } finally {
     child.kill("SIGTERM");
     await rm(tempDir, { recursive: true, force: true });

@@ -212,5 +212,33 @@ export function createCasesRouter(engine) {
     }
   });
 
+  // Fijar un fragmento de la respuesta de un agente para las siguientes rondas
+  router.post("/:sessionId/destacados", async (req, res, next) => {
+    try {
+      const { round, agent, text, note } = req.body || {};
+      const session = await engine.highlightCase({ sessionId: req.params.sessionId, round, agent, text, note });
+      res.status(201).json({ ok: true, data: session });
+    } catch (error) {
+      next(notFound(error, req.params.sessionId));
+    }
+  });
+
+  router.delete("/:sessionId/destacados/:highlightId", async (req, res, next) => {
+    try {
+      const session = await engine.removeHighlight(req.params);
+      res.json({ ok: true, data: session });
+    } catch (error) {
+      next(notFound(error, req.params.sessionId));
+    }
+  });
+
   return router;
+}
+
+function notFound(error, sessionId) {
+  if (error.code === "ENOENT") {
+    error.message = `Sesión "${sessionId}" no encontrada.`;
+    error.statusCode = 404;
+  }
+  return error;
 }

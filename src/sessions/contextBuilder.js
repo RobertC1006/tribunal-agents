@@ -37,7 +37,9 @@ export function buildPrompt({ session, agent, roundType, objection = "", images 
     ].join("\n");
   }
 
-  const compactHistory = formatCompactHistory(session.rounds);
+  const compactHistory = [formatCompactHistory(session.rounds), formatHighlights(session.highlights)]
+    .filter(Boolean)
+    .join("\n\n");
 
   if (roundType === "debate") {
     return [
@@ -60,6 +62,18 @@ export function buildPrompt({ session, agent, roundType, objection = "", images 
     `CUESTIONAMIENTO DEL USUARIO (JUEZ): "${objection}"`,
     "Responde directamente a la objeción del usuario y reconsidera tu postura si tiene razón.",
     FORMAT_INSTRUCTIONS,
+  ].join("\n");
+}
+
+export function formatHighlight(h) {
+  return `[${h.id} · Ronda ${h.round} · ${h.agent}] "${h.text}"${h.note ? ` — Nota del juez: ${h.note}` : ""}`;
+}
+
+function formatHighlights(highlights = []) {
+  if (!highlights.length) return "";
+  return [
+    "FRAGMENTOS DESTACADOS POR EL USUARIO (JUEZ): el juez marcó estos puntos como importantes. Abórdalos explícitamente en tu respuesta.",
+    ...highlights.map((h) => `- ${formatHighlight(h)}`),
   ].join("\n");
 }
 

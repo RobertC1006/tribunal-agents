@@ -10,6 +10,13 @@ export const HIGH_EFFORT_TIMEOUT_MS = 180000;
 export const XHIGH_EFFORT_TIMEOUT_MS = 300000;
 export const MIN_TIMEOUT_MS = 1000;
 export const MAX_TIMEOUT_MS = 3600000;
+export const MAX_HIGHLIGHT_CHARS = 2000;
+
+function badRequest(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
 
 export function resolveAgentTimeoutMs(
   agentConfig = {},
@@ -269,6 +276,51 @@ export class TribunalEngine {
       } finally {
         await this.store.save(session);
       }
+    });
+  }
+
+  /**
+   * Fija un fragmento de lo que dijo un agente. Queda en la sesión y se envía
+   * a los magistrados en cada ronda siguiente hasta que se quite.
+   */
+  async highlightCase({ sessionId, round, agent, text, note = "" }) {
+    const fragment = typeof text === "string" ? text.trim() : "";
+    const cleanNote = typeof note === "string" ? note.trim() : "";
+    if (!fragment || fragment.length > MAX_HIGHLIGHT_CHARS || cleanNote.length > MAX_HIGHLIGHT_CHARS) {
+      throw badRequest(`El fragmento es obligatorio y, igual que la nota, admite hasta ${MAX_HIGHLIGHT_CHARS} caracteres.`);
+    }
+    return this.withSessionLock(sessionId, async () => {
+      const session = await this.store.load(sessionId);
+      const roundNumber = Number(round);
+      const target = session.rounds.find((r) => r.number === roundNumber);
+      if (!target?.entries.some((entry) => entry.agent === agent && !entry.error)) {
+        throw badRequest(`No hay una respuesta de "${agent}" en la ronda ${round} de ${sessionId}.`);
+      }
+      const highlights = session.highlights || [];
+      const next = Math.max(0, ...highlights.map((h) => Number(h.id.slice(1)) || 0)) + 1;
+      session.highlights = [...highlights, {
+        id: `d${next}`,
+        round: roundNumber,
+        agent,
+        text: fragment,
+        ...(cleanNote ? { note: cleanNote } : {}),
+        createdAt: new Date().toISOString(),
+      }];
+      return this.store.save(session);
+    });
+  }
+
+  async removeHighlight({ sessionId, highlightId }) {
+    return this.withSessionLock(sessionId, async () => {
+      const session = await this.store.load(sessionId);
+      const highlights = session.highlights || [];
+      if (!highlights.some((h) => h.id === highlightId)) {
+        const error = new Error(`El destacado "${highlightId}" no existe en ${sessionId}.`);
+        error.statusCode = 404;
+        throw error;
+      }
+      session.highlights = highlights.filter((h) => h.id !== highlightId);
+      return this.store.save(session);
     });
   }
 

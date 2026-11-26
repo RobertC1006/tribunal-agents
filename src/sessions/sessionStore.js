@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { formatHighlight } from "./contextBuilder.js";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const ATTACHMENT_NAME_PATTERN = /^[a-zA-Z0-9_-]+\.(png|jpe?g|webp|gif)$/i;
@@ -152,6 +153,12 @@ export function renderMarkdownTranscript(session) {
     session.context || "_Sin contexto adicional._",
     "",
   ];
+
+  if (session.highlights?.length) {
+    lines.push("## Fragmentos destacados", "");
+    for (const h of session.highlights) lines.push(`- ${formatHighlight(h)}`);
+    lines.push("");
+  }
 
   for (const round of session.rounds) {
     lines.push(`## Ronda ${round.number} — ${round.type}`);
