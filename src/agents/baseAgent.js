@@ -1,25 +1,33 @@
 import { spawn } from "node:child_process";
 
 const SECTION_COLON_RE =
-  /^\s*(?:(?:#{1,6}\s+)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*(?:\*\*|__)?\s*(RESUMEN|DISIDENCIAS|RAZONAMIENTO)\s*(?:(?:\*\*|__)?\s*:\s*(?:\*\*|__)?)\s*(.*)$/i;
+  /^\s*(?:(?:#{1,6}\s+)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*(?:\*\*|__)?\s*(RESUMEN|DISIDENCIAS|RAZONAMIENTO|SUMMARY|DISSENTS|REASONING)\s*(?:(?:\*\*|__)?\s*:\s*(?:\*\*|__)?)\s*(.*)$/i;
 
 const SECTION_HEADING_RE =
-  /^\s*(?:(?:#{1,6}\s+)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*(?:\*\*|__)?\s*(RESUMEN|DISIDENCIAS|RAZONAMIENTO)\s*(?:\*\*|__)?\s*$/i;
+  /^\s*(?:(?:#{1,6}\s+)|(?:[-*+]\s+)|(?:\d+[.)]\s+))*(?:\*\*|__)?\s*(RESUMEN|DISIDENCIAS|RAZONAMIENTO|SUMMARY|DISSENTS|REASONING)\s*(?:\*\*|__)?\s*$/i;
+
+const SECTION_ALIASES = {
+  resumen: "summary",
+  summary: "summary",
+  disidencias: "dissents",
+  dissents: "dissents",
+  razonamiento: "reasoning",
+  reasoning: "reasoning",
+};
 
 /**
- * Extrae las 3 secciones estructuradas que usa el tribunal para
- * compactar contexto entre rondas y guardar el detalle completo para el usuario.
- * Tolera encabezados Markdown, listas y negritas que suelen emitir los modelos reales.
+ * Extracts the 3 structured sections used to compact context between rounds
+ * and store full reasoning for the user. Tolerates Markdown headings, lists, and bold.
  */
 export function parseAgentOutput(rawText) {
   const text = String(rawText || "").replace(/\r\n/g, "\n").trim();
-  const sections = { resumen: [], disidencias: [], razonamiento: [] };
+  const sections = { summary: [], dissents: [], reasoning: [] };
   let current = null;
 
   for (const line of text.split("\n")) {
     const colonMatch = line.match(SECTION_COLON_RE);
     if (colonMatch) {
-      current = colonMatch[1].toLowerCase();
+      current = SECTION_ALIASES[colonMatch[1].toLowerCase()];
       if (colonMatch[2].trim()) {
         sections[current].push(colonMatch[2].trim());
       }
@@ -28,7 +36,7 @@ export function parseAgentOutput(rawText) {
 
     const headingMatch = line.match(SECTION_HEADING_RE);
     if (headingMatch) {
-      current = headingMatch[1].toLowerCase();
+      current = SECTION_ALIASES[headingMatch[1].toLowerCase()];
       continue;
     }
 
@@ -37,20 +45,20 @@ export function parseAgentOutput(rawText) {
     }
   }
 
-  const resumen =
-    sections.resumen.join("\n").trim() ||
+  const summary =
+    sections.summary.join("\n").trim() ||
     text.split("\n").slice(0, 2).join(" ").slice(0, 260);
 
-  const disidencias =
-    sections.disidencias.join("\n").trim() ||
+  const dissents =
+    sections.dissents.join("\n").trim() ||
     "Sin disidencias explícitas registradas.";
 
-  const razonamiento = sections.razonamiento.join("\n").trim() || text;
+  const reasoning = sections.reasoning.join("\n").trim() || text;
 
   return {
-    resumen,
-    disidencias,
-    razonamiento,
+    summary,
+    dissents,
+    reasoning,
     raw: text,
   };
 }

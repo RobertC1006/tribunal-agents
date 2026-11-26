@@ -130,9 +130,9 @@ export function renderMarkdownTranscript(session) {
       if (entry.error) {
         lines.push(`- **Error:** ${entry.error}`);
       } else {
-        lines.push(`- **Resumen:** ${entry.resumen}`);
-        lines.push(`- **Disidencias:** ${entry.disidencias}`);
-        lines.push(`- **Razonamiento completo:** ${entry.razonamiento}`);
+        lines.push(`- **Resumen:** ${entry.summary ?? entry.resumen ?? ""}`);
+        lines.push(`- **Disidencias:** ${entry.dissents ?? entry.disidencias ?? ""}`);
+        lines.push(`- **Razonamiento completo:** ${entry.reasoning ?? entry.razonamiento ?? ""}`);
       }
       lines.push("");
     }

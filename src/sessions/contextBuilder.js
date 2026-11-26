@@ -63,7 +63,8 @@ function formatCompactHistory(rounds) {
   if (!rounds.length) return "(Sin intervenciones previas)";
 
   return rounds
-    .map((round) => {
+    .map((round, index) => {
+      const isLatest = index === rounds.length - 1;
       const lines = [`--- Ronda ${round.number} (${round.type}) ---`];
       if (round.userObjection) {
         lines.push(`Objeción del usuario: ${round.userObjection}`);
@@ -72,8 +73,15 @@ function formatCompactHistory(rounds) {
         if (entry.error) {
           lines.push(`- ${entry.agent}: [ERROR] ${entry.error}`);
         } else {
-          lines.push(`- ${entry.agent} | Resumen: ${entry.resumen}`);
-          lines.push(`  Disidencias: ${entry.disidencias}`);
+          const summary = entry.summary ?? entry.resumen ?? "";
+          const dissents = entry.dissents ?? entry.disidencias ?? "";
+          const reasoning = entry.reasoning ?? entry.razonamiento ?? "";
+          lines.push(`- ${entry.agent} | Resumen: ${summary}`);
+          lines.push(`  Disidencias: ${dissents}`);
+          if (isLatest && reasoning) {
+            const excerpt = String(reasoning).replace(/\s+/g, " ").trim().slice(0, 1200);
+            lines.push(`  Argumentos (extracto): ${excerpt}`);
+          }
         }
       }
       return lines.join("\n");

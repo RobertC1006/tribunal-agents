@@ -1,10 +1,44 @@
 import { randomBytes } from "node:crypto";
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import { createAgent } from "../agents/registry.js";
 import { buildPrompt } from "../sessions/contextBuilder.js";
 
 export const MAX_DEBATE_ROUNDS = 5;
 export const WORKSPACE_TIMEOUT_MS = 300000;
+export const MIN_TIMEOUT_MS = 1000;
+export const MAX_TIMEOUT_MS = 3600000;
+
+function validateTimeoutMs(timeoutMs) {
+  if (timeoutMs === undefined) return undefined;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < MIN_TIMEOUT_MS || timeoutMs > MAX_TIMEOUT_MS) {
+    const error = new Error(
+      `El timeout debe estar entre ${MIN_TIMEOUT_MS / 1000} y ${MAX_TIMEOUT_MS / 1000} segundos.`
+    );
+    error.statusCode = 400;
+    throw error;
+  }
+  return timeoutMs;
+}
+
+async function resolveWorkspaceDir(workspaceDir) {
+  if (!workspaceDir) return undefined;
+  const resolved = path.resolve(workspaceDir);
+  let info;
+  try {
+    info = await stat(resolved);
+  } catch {
+    const error = new Error(`El directorio del proyecto no existe: "${resolved}".`);
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!info.isDirectory()) {
+    const error = new Error(`La ruta del proyecto no es una carpeta: "${resolved}".`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return resolved;
+}
 
 /**
  * Motor central del Tribunal.
@@ -44,9 +78,9 @@ export class TribunalEngine {
    *  - Rondas de debate opcionales que usan los resúmenes previos
    * Al terminar, la sesión queda en estado "dormida" en disco (0 procesos activos).
    */
-  async abrirCaso({
+  async openCase({
     topic, context = "", workspaceDir = "", agents, includeDebateRound = true,
-    debateRounds = includeDebateRound ? 1 : 0, onRound,
+    debateRounds = includeDebateRound ? 1 : 0, timeoutMs, onRound, onAgentStart, onAgentDone,
   }) {
     if (!Number.isSafeInteger(debateRounds) || debateRounds < 0 || debateRounds > MAX_DEBATE_ROUNDS) {
       const error = new Error(
@@ -56,6 +90,9 @@ export class TribunalEngine {
       throw error;
     }
 
+    const validatedTimeout = validateTimeoutMs(timeoutMs);
+    const resolvedWorkspace = await resolveWorkspaceDir(workspaceDir);
+
     const selectedAgents =
       Array.isArray(agents) && agents.length > 0
         ? agents
@@ -63,13 +100,13 @@ export class TribunalEngine {
 
     const id = generateSessionId();
     const now = new Date().toISOString();
-    const resolvedWorkspace = workspaceDir ? path.resolve(workspaceDir) : undefined;
 
     const session = {
       id,
       topic,
       context,
       ...(resolvedWorkspace ? { workspaceDir: resolvedWorkspace } : {}),
+      ...(validatedTimeout ? { timeoutMs: validatedTimeout } : {}),
       status: "activa",
       agents: selectedAgents,
       createdAt: now,
@@ -82,6 +119,8 @@ export class TribunalEngine {
         roundType: "apertura",
         targetAgents: selectedAgents,
         onRound,
+        onAgentStart,
+        onAgentDone,
       });
 
       for (let i = 0; i < debateRounds; i += 1) {
@@ -89,6 +128,8 @@ export class TribunalEngine {
           roundType: "debate",
           targetAgents: selectedAgents,
           onRound,
+          onAgentStart,
+          onAgentDone,
         });
       }
 
@@ -108,7 +149,8 @@ export class TribunalEngine {
    * Despierta temporalmente una sesión dormida, inyecta la objeción del usuario,
    * recoge las nuevas respuestas y vuelve a guardarla como "dormida".
    */
-  async cuestionarCaso({ sessionId, objection, targetAgents, onRound }) {
+  async challengeCase({ sessionId, objection, targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+    const validatedTimeout = validateTimeoutMs(timeoutMs);
     return this.withSessionLock(sessionId, async () => {
       const session = await this.store.load(sessionId);
       const agentsToAsk =
@@ -123,7 +165,45 @@ export class TribunalEngine {
           roundType: "cuestionamiento",
           targetAgents: agentsToAsk,
           userObjection: objection,
+          timeoutMs: validatedTimeout,
           onRound,
+          onAgentStart,
+          onAgentDone,
+        });
+        session.status = "dormida";
+        return session;
+      } catch (error) {
+        session.status = "interrumpida";
+        throw error;
+      } finally {
+        await this.store.save(session);
+      }
+    });
+  }
+
+  /**
+   * Despierta una sesión dormida para que los magistrados debatan entre sí
+   * sobre la última ronda (apertura o cuestionamiento previo).
+   */
+  async debateCase({ sessionId, targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+    const validatedTimeout = validateTimeoutMs(timeoutMs);
+    return this.withSessionLock(sessionId, async () => {
+      const session = await this.store.load(sessionId);
+      const agentsToAsk =
+        Array.isArray(targetAgents) && targetAgents.length > 0
+          ? targetAgents
+          : session.agents;
+
+      session.status = "activa";
+
+      try {
+        await this.runRound(session, {
+          roundType: "debate",
+          targetAgents: agentsToAsk,
+          timeoutMs: validatedTimeout,
+          onRound,
+          onAgentStart,
+          onAgentDone,
         });
         session.status = "dormida";
         return session;
@@ -139,18 +219,22 @@ export class TribunalEngine {
   /**
    * Inspecciona una sesión dormida sin llamar a ninguna IA (costo 0 tokens).
    */
-  async inspeccionarCaso(sessionId) {
+  async inspectCase(sessionId) {
     return this.store.load(sessionId);
   }
 
-  async listarCasos() {
+  async listCases() {
     return this.store.list();
   }
 
-  async runRound(session, { roundType, targetAgents, userObjection = "", onRound }) {
+  async runRound(
+    session,
+    { roundType, targetAgents, userObjection = "", timeoutMs: roundTimeoutMs, onRound, onAgentStart, onAgentDone },
+  ) {
     const agents = targetAgents.map((name) =>
       createAgent(name, this.config.agents[name])
     );
+    const roundNumber = session.rounds.length + 1;
 
     const entries = await Promise.all(
       agents.map(async (agent) => {
@@ -161,9 +245,17 @@ export class TribunalEngine {
           objection: userObjection,
         });
 
+        const startedAt = Date.now();
+        onAgentStart?.({ agent: agent.name, roundNumber, roundType });
+
         try {
-          const timeoutMs = session.workspaceDir
-            ? Math.max(agent.config.timeoutMs || 90000, WORKSPACE_TIMEOUT_MS)
+          const profileTimeout = agent.config.timeoutMs || 90000;
+          const requestedTimeout =
+            roundTimeoutMs ||
+            session.timeoutMs ||
+            (session.workspaceDir ? WORKSPACE_TIMEOUT_MS : 0);
+          const timeoutMs = requestedTimeout
+            ? Math.max(profileTimeout, requestedTimeout)
             : agent.config.timeoutMs;
           const result = await agent.ask({
             prompt,
@@ -172,19 +264,32 @@ export class TribunalEngine {
             cwd: session.workspaceDir,
             timeoutMs,
           });
+          const durationMs = Date.now() - startedAt;
+          onAgentDone?.({ agent: agent.name, roundNumber, roundType, durationMs, ok: true });
           return {
             agent: agent.name,
             role: agent.role,
-            resumen: result.resumen,
-            disidencias: result.disidencias,
-            razonamiento: result.razonamiento,
+            summary: result.summary,
+            dissents: result.dissents,
+            reasoning: result.reasoning,
+            durationMs,
             timestamp: new Date().toISOString(),
           };
         } catch (error) {
+          const durationMs = Date.now() - startedAt;
+          onAgentDone?.({
+            agent: agent.name,
+            roundNumber,
+            roundType,
+            durationMs,
+            ok: false,
+            error: error.message,
+          });
           return {
             agent: agent.name,
             role: agent.role,
             error: error.message,
+            durationMs,
             timestamp: new Date().toISOString(),
           };
         }
@@ -192,7 +297,7 @@ export class TribunalEngine {
     );
 
     const round = {
-      number: session.rounds.length + 1,
+      number: roundNumber,
       type: roundType,
       userObjection: userObjection || undefined,
       entries,
