@@ -35,7 +35,7 @@ pnpm start ver [sessionId]                   # Inspecciona un acta guardada (0 t
 pnpm start cuestionar [sessionId] "<objeción>" "[agentes]"
 pnpm start debatir [sessionId] "[agentes]"   # Lanza una ronda adicional de réplica
 pnpm start agentes                           # Muestra perfiles, modelos y timeouts
-pnpm start configurar                        # Cambiar modelo, clonar, predeterminados, eliminar o timeout
+pnpm start configurar                        # Añadir perfil (claude, codex, agy, opencode, ollama), cambiar modelo, clonar, predeterminados, eliminar o timeout
 ```
 
 > **Consejo práctico:** empieza con **1 ronda de debate** (`debateRounds: 1`, valor por defecto = 2 rondas en total: apertura ciega + debate). Al terminar, la CLI te preguntará si deseas escribir un cuestionamiento, redebatir la última ronda o dejar la sesión dormida (0 procesos en memoria).

@@ -523,7 +523,7 @@ ${colorize("Comandos directos:", "1;93")}
   pnpm start destacar [id] [ronda] [agente] "[fragmento]" "[nota]"  ${colorize("(fija un fragmento para las próximas rondas)", 90)}
   pnpm start quitar-destacado <id> <idDestacado>
   pnpm start agentes       ${colorize("(lista perfiles con sus colores, modelos y timeout)", 90)}
-  pnpm start configurar    ${colorize("(cambiar modelo, clonar, predeterminados, eliminar o timeout)", 90)}
+  pnpm start configurar    ${colorize("(añadir perfil, cambiar modelo, clonar, predeterminados, eliminar o timeout)", 90)}
 `);
 }
 

@@ -7,6 +7,7 @@ import { DEFAULT_CONFIG_PATH, LOCAL_CONFIG_PATH } from "./loadConfig.js";
 import { modelCatalog } from "./modelCatalog.js";
 
 const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
+const NEW_PROFILE_TYPES = ["claude", "codex", "agy", "opencode", "ollama"];
 
 export function printAgents({ agents, defaultAgents }, print = console.log) {
   for (const { value: name, badge, detail, color } of agentOptions(agents, defaultAgents)) {
@@ -65,47 +66,71 @@ export async function editConfig({
           { value: "4", label: "Eliminar perfil", detail: "quita simuladores o perfiles sobrantes", color: 91 },
           { value: "5", label: "Cambiar timeout", detail: "tiempo máximo de espera por perfil", color: 95 },
           { value: "6", label: "Cambiar nivel de razonamiento", detail: "low, medium, high o xhigh", color: 93 },
+          { value: "7", label: "Añadir perfil nuevo", detail: NEW_PROFILE_TYPES.join(", "), color: 94 },
           { value: "0", label: "Salir", color: 90 },
         ]);
       } else {
         print("\nParticipantes del Tribunal\n");
         printAgents({ agents, defaultAgents }, print);
-        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n5. Cambiar timeout\n6. Cambiar nivel de razonamiento\n0. Salir");
+        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n5. Cambiar timeout\n6. Cambiar nivel de razonamiento\n7. Añadir perfil nuevo\n0. Salir");
         option = await ask("Opción:");
       }
       if (option === undefined || option === "0") return;
 
       let statusMessage = "Configuración guardada.";
 
-      if (option === "1" || option === "2") {
-        const source = interactive
-          ? await choose(
-              "Elige el perfil",
-              agentOptions(agents, defaultAgents).filter(({ value }) => agents[value].type !== "mock")
-            )
-          : await ask("Nombre del perfil:");
-        if (source === undefined) {
-          if (interactive) continue;
-          return;
+      if (option === "1" || option === "2" || option === "7") {
+        let name;
+        let profile;
+        if (option === "7") {
+          const type = interactive
+            ? await choose("Tipo de agente", NEW_PROFILE_TYPES.map((value) => ({
+                value, label: value, color: agentColor({ [value]: { type: value } }, value),
+              })))
+            : await ask(`Tipo (${NEW_PROFILE_TYPES.join(", ")}):`);
+          if (type === undefined) {
+            if (interactive) continue;
+            return;
+          }
+          if (!NEW_PROFILE_TYPES.includes(type)) {
+            print(`Tipos disponibles: ${NEW_PROFILE_TYPES.join(", ")}.`);
+            continue;
+          }
+          name = await ask(`Nombre del nuevo perfil [${type}]:`);
+          if (name === undefined) return;
+          name ||= type;
+          profile = type === "ollama"
+            ? { type, baseUrl: "http://localhost:11434", timeoutMs: 180000 }
+            : { type, command: type, timeoutMs: 180000 };
+        } else {
+          const source = interactive
+            ? await choose(
+                "Elige el perfil",
+                agentOptions(agents, defaultAgents).filter(({ value }) => agents[value].type !== "mock")
+              )
+            : await ask("Nombre del perfil:");
+          if (source === undefined) {
+            if (interactive) continue;
+            return;
+          }
+          if (!Object.hasOwn(agents, source) || agents[source].type === "mock") {
+            print("Elige un perfil existente que use un modelo real.");
+            continue;
+          }
+          name = option === "2" ? await ask("Nombre del nuevo perfil:") : source;
+          if (name === undefined) return;
+          profile = { ...agents[source] };
         }
-        if (!Object.hasOwn(agents, source) || agents[source].type === "mock") {
-          print("Elige un perfil existente que use un modelo real.");
-          continue;
-        }
-
-        const name = option === "2" ? await ask("Nombre del nuevo perfil:") : source;
-        if (name === undefined) return;
-        if (option === "2" && (!/^[a-zA-Z0-9_-]+$/.test(name) || Object.hasOwn(agents, name))) {
+        if (option !== "1" && (!/^[a-zA-Z0-9_-]+$/.test(name) || Object.hasOwn(agents, name))) {
           print("Usa un nombre nuevo con letras, números, guiones o guiones bajos.");
           continue;
         }
 
-        const profile = { ...agents[source] };
         const current = profile.model ?? "predeterminado del proveedor";
         let model;
         if (interactive) {
           if (profile.type === "agy") print(colorize("Consultando el catálogo de Antigravity…", 90, output));
-          const options = await modelOptions(profile, agents, agentColor(agents, source));
+          const options = await modelOptions(profile, agents, agentColor({ [name]: profile }, name));
           model = await choose(`Modelo para ${name}`, options, { selected: [profile.model ?? "-"] });
         } else {
           model = await ask(`ID del modelo [${current}] (Enter para conservar, - para restablecer):`);
@@ -122,6 +147,9 @@ export async function editConfig({
           continue;
         }
         config.agents = { ...agents, [name]: profile };
+        if (option === "7") {
+          statusMessage = `Perfil "${name}" creado. Para que participe por defecto usa «Elegir participantes predeterminados».`;
+        }
       } else if (option === "3") {
         let names;
         if (interactive) {
