@@ -5,10 +5,10 @@ import { BaseAgent, parseAgentOutput } from "./baseAgent.js";
  * Usa fetch() nativo de Node.js sin librerías extra.
  */
 export class OllamaAgent extends BaseAgent {
-  async ask({ prompt }) {
+  async ask({ prompt, timeoutMs: overrideTimeoutMs }) {
     const baseUrl = (this.config.baseUrl || "http://localhost:11434").replace(/\/$/, "");
     const model = this.config.model;
-    const timeoutMs = this.config.timeoutMs || 120000;
+    const timeoutMs = overrideTimeoutMs || this.config.timeoutMs || 120000;
 
     if (!model) {
       throw new Error(`OllamaAgent "${this.name}" requiere un campo 'model'.`);

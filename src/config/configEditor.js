@@ -7,8 +7,9 @@ import { modelCatalog } from "./modelCatalog.js";
 export function printAgents({ agents, defaultAgents }, print = console.log) {
   for (const { value: name, badge, detail, color } of agentOptions(agents, defaultAgents)) {
     const tag = colorize(`[${badge}]`, color);
+    const timeoutSec = agents[name]?.timeoutMs ? colorize(` · ${Math.round(agents[name].timeoutMs / 1000)}s`, 90) : "";
     const selected = defaultAgents.includes(name) ? colorize(" ★ predeterminado", 92) : "";
-    print(`  ${tag} ${colorize(name, `1;${color}`)} ${colorize("·", 90)} ${detail}${selected}`);
+    print(`  ${tag} ${colorize(name, `1;${color}`)} ${colorize("·", 90)} ${detail}${timeoutSec}${selected}`);
   }
 }
 
@@ -45,12 +46,13 @@ export async function editConfig({
           { value: "2", label: "Crear perfil a partir de otro", detail: "clona un agente con otro modelo", color: 92 },
           { value: "3", label: "Elegir participantes predeterminados", detail: `${defaultAgents.length} activos`, color: 93 },
           { value: "4", label: "Eliminar perfil", detail: "quita simuladores o perfiles sobrantes", color: 91 },
+          { value: "5", label: "Cambiar timeout", detail: "tiempo máximo de espera por perfil", color: 95 },
           { value: "0", label: "Salir", color: 90 },
         ]);
       } else {
         print("\nParticipantes del Tribunal\n");
         printAgents({ agents, defaultAgents }, print);
-        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n0. Salir");
+        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n5. Cambiar timeout\n0. Salir");
         option = await ask("Opción:");
       }
       if (option === undefined || option === "0") return;
@@ -145,6 +147,54 @@ export async function editConfig({
         const nextDefaults = defaultAgents.filter((name) => name !== target && Object.hasOwn(remaining, name));
         config.defaultAgents = nextDefaults.length ? nextDefaults : [Object.keys(remaining)[0]];
         statusMessage = `Perfil "${target}" eliminado.`;
+      } else if (option === "5") {
+        const target = interactive
+          ? await choose(
+              "Perfil para ajustar timeout",
+              agentOptions(agents, defaultAgents).filter(({ value }) => agents[value].type !== "mock")
+            )
+          : await ask("Nombre del perfil:");
+        if (target === undefined) {
+          if (interactive) continue;
+          return;
+        }
+        if (!Object.hasOwn(agents, target) || agents[target].type === "mock") {
+          print("Elige un perfil real de la lista.");
+          continue;
+        }
+        const currentSec = Math.round((agents[target].timeoutMs || 90000) / 1000);
+        let secondsInput;
+        if (interactive) {
+          secondsInput = await choose(
+            `Timeout para ${target} (actual: ${currentSec}s)`,
+            [
+              { value: "60", label: "60 segundos", detail: "respuestas rápidas", color: 92 },
+              { value: "90", label: "90 segundos", detail: "valor por defecto", color: 96 },
+              { value: "180", label: "180 segundos (3 min)", detail: "análisis medio", color: 93 },
+              { value: "300", label: "300 segundos (5 min)", detail: "auditorías de código", color: 95 },
+              { value: "600", label: "600 segundos (10 min)", detail: "repositorios grandes", color: 91 },
+              { value: "", label: "Escribir otro valor en segundos", color: 90 },
+            ],
+            { selected: [String(currentSec)] }
+          );
+          if (secondsInput === "") secondsInput = await ask("Segundos (1 a 3600):");
+        } else {
+          secondsInput = await ask(`Segundos de timeout [${currentSec}]:`);
+        }
+        if (secondsInput === undefined) {
+          if (interactive) continue;
+          return;
+        }
+        const seconds = Number(secondsInput);
+        if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 3600) {
+          print("Indica un número entero entre 1 y 3600 segundos.");
+          continue;
+        }
+        config.agents = {
+          ...agents,
+          [target]: { ...agents[target], timeoutMs: seconds * 1000 },
+        };
+        statusMessage = `Timeout de "${target}" actualizado a ${seconds}s.`;
       } else {
         print("Elige una opción del menú.");
         continue;

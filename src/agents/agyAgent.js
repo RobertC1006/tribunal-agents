@@ -1,19 +1,25 @@
-import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 /**
  * Módulo específico para Antigravity CLI (`agy`).
- * Centraliza los argumentos y futuro manejo de sesiones propios de AGY.
+ * En `agy`, `-p` consume inmediatamente el siguiente argumento como prompt,
+ * por lo que `--model` y `extraArgs` deben ir antes de `-p`.
  */
 export class AgyAgent extends BaseAgent {
   buildArgs(prompt) {
-    const args = ["-p"];
+    const args = [];
     if (this.config.model) {
       args.push("--model", this.config.model);
     }
     if (Array.isArray(this.config.extraArgs)) {
       args.push(...this.config.extraArgs);
     }
-    return appendPromptArg(args, prompt);
+    if (typeof prompt === "string" && prompt.startsWith("-")) {
+      args.push(`-p=${prompt}`);
+    } else {
+      args.push("-p", prompt);
+    }
+    return args;
   }
 
   async ask({ prompt, cwd, timeoutMs }) {
