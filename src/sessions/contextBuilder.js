@@ -16,6 +16,12 @@ export function buildPrompt({ session, agent, roundType, objection = "" }) {
     ...(agent.role ? [`Tu rol: ${agent.role}`] : []),
     `Tema del caso: ${session.topic}`,
     `Cápsula de contexto inicial: ${session.context || "Sin contexto adicional."}`,
+    ...(session.workspaceDir
+      ? [
+          `Directorio del proyecto a investigar: ${session.workspaceDir}`,
+          "Instrucción de investigación: Puedes leer e inspeccionar los archivos del proyecto en modo solo lectura (sin modificar archivos) para fundamentar tu postura citando rutas o código real.",
+        ]
+      : []),
   ].join("\n");
 
   if (roundType === "apertura") {

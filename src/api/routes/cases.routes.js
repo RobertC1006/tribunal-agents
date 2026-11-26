@@ -23,6 +23,7 @@ export function createCasesRouter(engine) {
       const {
         topic,
         context = "",
+        workspaceDir = "",
         agents,
         includeDebateRound = true,
         debateRounds,
@@ -45,6 +46,7 @@ export function createCasesRouter(engine) {
       const session = await engine.abrirCaso({
         topic,
         context,
+        workspaceDir,
         agents,
         ...(debateRounds !== undefined ? { debateRounds } : { includeDebateRound }),
       });

@@ -4,6 +4,7 @@ import { SessionStore } from "../sessions/sessionStore.js";
 import { createApp } from "./createApp.js";
 
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "127.0.0.1";
 
 async function startServer() {
   const config = await loadConfig();
@@ -11,8 +12,8 @@ async function startServer() {
   const engine = new TribunalEngine({ config, store });
   const app = createApp({ config, engine });
 
-  app.listen(PORT, () => {
-    console.log(`⚖️  Tribunal de Agentes escuchando en http://localhost:${PORT}`);
+  app.listen(PORT, HOST, () => {
+    console.log(`⚖️  Tribunal de Agentes escuchando en http://${HOST}:${PORT}`);
     console.log(`   - GET  /health`);
     console.log(`   - GET  /api/agentes`);
     console.log(`   - GET  /api/casos`);

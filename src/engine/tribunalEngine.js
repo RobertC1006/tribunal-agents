@@ -1,6 +1,10 @@
 import { randomBytes } from "node:crypto";
+import path from "node:path";
 import { createAgent } from "../agents/registry.js";
 import { buildPrompt } from "../sessions/contextBuilder.js";
+
+export const MAX_DEBATE_ROUNDS = 5;
+export const WORKSPACE_TIMEOUT_MS = 300000;
 
 /**
  * Motor central del Tribunal.
@@ -11,6 +15,27 @@ export class TribunalEngine {
   constructor({ config, store }) {
     this.config = config;
     this.store = store;
+    this.sessionLocks = new Map();
+  }
+
+  async withSessionLock(sessionId, fn) {
+    const previous = this.sessionLocks.get(sessionId) || Promise.resolve();
+    let release;
+    const current = new Promise((resolve) => {
+      release = resolve;
+    });
+    const tail = previous.then(() => current);
+    this.sessionLocks.set(sessionId, tail);
+
+    await previous;
+    try {
+      return await fn();
+    } finally {
+      release();
+      if (this.sessionLocks.get(sessionId) === tail) {
+        this.sessionLocks.delete(sessionId);
+      }
+    }
   }
 
   /**
@@ -20,11 +45,13 @@ export class TribunalEngine {
    * Al terminar, la sesión queda en estado "dormida" en disco (0 procesos activos).
    */
   async abrirCaso({
-    topic, context = "", agents, includeDebateRound = true,
+    topic, context = "", workspaceDir = "", agents, includeDebateRound = true,
     debateRounds = includeDebateRound ? 1 : 0, onRound,
   }) {
-    if (!Number.isSafeInteger(debateRounds) || debateRounds < 0) {
-      const error = new Error("El número de rondas de debate debe ser un entero no negativo.");
+    if (!Number.isSafeInteger(debateRounds) || debateRounds < 0 || debateRounds > MAX_DEBATE_ROUNDS) {
+      const error = new Error(
+        `El número de rondas de debate debe ser un entero no negativo (entre 0 y ${MAX_DEBATE_ROUNDS}).`
+      );
       error.statusCode = 400;
       throw error;
     }
@@ -36,11 +63,13 @@ export class TribunalEngine {
 
     const id = generateSessionId();
     const now = new Date().toISOString();
+    const resolvedWorkspace = workspaceDir ? path.resolve(workspaceDir) : undefined;
 
     const session = {
       id,
       topic,
       context,
+      ...(resolvedWorkspace ? { workspaceDir: resolvedWorkspace } : {}),
       status: "activa",
       agents: selectedAgents,
       createdAt: now,
@@ -48,23 +77,31 @@ export class TribunalEngine {
       rounds: [],
     };
 
-    await this.runRound(session, {
-      roundType: "apertura",
-      targetAgents: selectedAgents,
-      onRound,
-    });
-
-    for (let i = 0; i < debateRounds; i += 1) {
+    try {
       await this.runRound(session, {
-        roundType: "debate",
+        roundType: "apertura",
         targetAgents: selectedAgents,
         onRound,
       });
-    }
 
-    session.status = "dormida";
-    await this.store.save(session);
-    return session;
+      for (let i = 0; i < debateRounds; i += 1) {
+        await this.runRound(session, {
+          roundType: "debate",
+          targetAgents: selectedAgents,
+          onRound,
+        });
+      }
+
+      session.status = "dormida";
+      return session;
+    } catch (error) {
+      session.status = "interrumpida";
+      throw error;
+    } finally {
+      if (session.rounds.length > 0) {
+        await this.store.save(session);
+      }
+    }
   }
 
   /**
@@ -72,24 +109,31 @@ export class TribunalEngine {
    * recoge las nuevas respuestas y vuelve a guardarla como "dormida".
    */
   async cuestionarCaso({ sessionId, objection, targetAgents, onRound }) {
-    const session = await this.store.load(sessionId);
-    const agentsToAsk =
-      Array.isArray(targetAgents) && targetAgents.length > 0
-        ? targetAgents
-        : session.agents;
+    return this.withSessionLock(sessionId, async () => {
+      const session = await this.store.load(sessionId);
+      const agentsToAsk =
+        Array.isArray(targetAgents) && targetAgents.length > 0
+          ? targetAgents
+          : session.agents;
 
-    session.status = "activa";
+      session.status = "activa";
 
-    await this.runRound(session, {
-      roundType: "cuestionamiento",
-      targetAgents: agentsToAsk,
-      userObjection: objection,
-      onRound,
+      try {
+        await this.runRound(session, {
+          roundType: "cuestionamiento",
+          targetAgents: agentsToAsk,
+          userObjection: objection,
+          onRound,
+        });
+        session.status = "dormida";
+        return session;
+      } catch (error) {
+        session.status = "interrumpida";
+        throw error;
+      } finally {
+        await this.store.save(session);
+      }
     });
-
-    session.status = "dormida";
-    await this.store.save(session);
-    return session;
   }
 
   /**
@@ -118,10 +162,15 @@ export class TribunalEngine {
         });
 
         try {
+          const timeoutMs = session.workspaceDir
+            ? Math.max(agent.config.timeoutMs || 90000, WORKSPACE_TIMEOUT_MS)
+            : agent.config.timeoutMs;
           const result = await agent.ask({
             prompt,
             roundType,
             topic: session.topic,
+            cwd: session.workspaceDir,
+            timeoutMs,
           });
           return {
             agent: agent.name,

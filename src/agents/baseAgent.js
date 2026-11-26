@@ -70,14 +70,24 @@ export function appendPromptArg(args, prompt) {
  * Helper compartido para ejecutar un proceso CLI puntual y cerrarlo al terminar.
  * Cada agente CLI (Claude, Codex, AGY) decide sus propios comandos y flags.
  */
-export function runProcess({ command, args, timeoutMs = 90000, killGraceMs = 2000, input }) {
+export function runProcess({
+  command,
+  args,
+  timeoutMs = 90000,
+  killGraceMs = 2000,
+  maxOutputBytes = 4 * 1024 * 1024,
+  input,
+  cwd,
+}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      cwd,
       stdio: [input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
     });
 
     let stdout = "";
     let stderr = "";
+    let totalBytes = 0;
     let finished = false;
     let exited = false;
     let forceKillTimer;
@@ -87,29 +97,42 @@ export function runProcess({ command, args, timeoutMs = 90000, killGraceMs = 200
       if (forceKillTimer) clearTimeout(forceKillTimer);
     };
 
+    const killProcess = (reasonError) => {
+      if (finished) return;
+      finished = true;
+      child.kill("SIGTERM");
+      forceKillTimer = setTimeout(() => {
+        if (!exited) {
+          child.kill("SIGKILL");
+        }
+      }, killGraceMs);
+      reject(reasonError);
+    };
+
     const timer = setTimeout(() => {
-      if (!finished) {
-        finished = true;
-        child.kill("SIGTERM");
-        forceKillTimer = setTimeout(() => {
-          if (!exited) {
-            child.kill("SIGKILL");
-          }
-        }, killGraceMs);
-        reject(new Error(`Timeout (${timeoutMs}ms) ejecutando "${command}".`));
-      }
+      killProcess(new Error(`Timeout (${timeoutMs}ms) ejecutando "${command}".`));
     }, timeoutMs);
 
     if (input !== undefined && child.stdin) {
       child.stdin.end(String(input));
     }
 
+    const collect = (target, chunk) => {
+      totalBytes += chunk.length;
+      if (totalBytes > maxOutputBytes) {
+        cleanupTimers();
+        killProcess(new Error(`Salida excesiva (>${maxOutputBytes} bytes) ejecutando "${command}".`));
+        return target;
+      }
+      return target + chunk.toString("utf-8");
+    };
+
     child.stdout.on("data", (chunk) => {
-      stdout += chunk.toString("utf-8");
+      stdout = collect(stdout, chunk);
     });
 
     child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString("utf-8");
+      stderr = collect(stderr, chunk);
     });
 
     child.on("error", (error) => {

@@ -1,23 +1,11 @@
 {
   "sessionsDir": "./sessions",
   "defaultAgents": [
-    "claude-sim",
-    "codex-sim",
-    "local-sim"
+    "claude",
+    "codex",
+    "agy"
   ],
   "agents": {
-    "claude-sim": {
-      "type": "mock",
-      "stance": "cauteloso"
-    },
-    "codex-sim": {
-      "type": "mock",
-      "stance": "pragmatico"
-    },
-    "local-sim": {
-      "type": "mock",
-      "stance": "critico"
-    },
     "claude": {
       "type": "claude",
       "command": "claude",
@@ -27,7 +15,8 @@
     "codex": {
       "type": "codex",
       "command": "codex",
-      "timeoutMs": 90000
+      "timeoutMs": 90000,
+      "model": "gpt-6.2-astra"
     },
     "claude1": {
       "type": "claude",
@@ -40,7 +29,8 @@
     "agy": {
       "type": "agy",
       "command": "agy",
-      "timeoutMs": 90000
+      "timeoutMs": 90000,
+      "model": "gemini-4-neon-xhigh"
     },
     "ollama-local": {
       "type": "ollama",

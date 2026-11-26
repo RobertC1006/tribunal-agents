@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -43,16 +44,14 @@ export class SessionStore {
     await this.ensureDir();
     session.updatedAt = new Date().toISOString();
 
-    await writeFile(
+    await writeAtomic(
       this.getJsonPath(session.id),
-      JSON.stringify(session, null, 2),
-      "utf-8"
+      JSON.stringify(session, null, 2)
     );
 
-    await writeFile(
+    await writeAtomic(
       this.getMarkdownPath(session.id),
-      renderMarkdownTranscript(session),
-      "utf-8"
+      renderMarkdownTranscript(session)
     );
 
     return session;
@@ -70,18 +69,33 @@ export class SessionStore {
 
     const summaries = [];
     for (const file of jsonFiles) {
-      const raw = await readFile(path.join(this.sessionsDir, file), "utf-8");
-      const session = JSON.parse(raw);
-      summaries.push({
-        id: session.id,
-        topic: session.topic,
-        status: session.status,
-        agents: session.agents,
-        roundsCount: session.rounds.length,
-        updatedAt: session.updatedAt,
-      });
+      try {
+        const raw = await readFile(path.join(this.sessionsDir, file), "utf-8");
+        const session = JSON.parse(raw);
+        if (!session?.id || !Array.isArray(session.rounds)) continue;
+        summaries.push({
+          id: session.id,
+          topic: session.topic,
+          status: session.status,
+          agents: session.agents,
+          roundsCount: session.rounds.length,
+          updatedAt: session.updatedAt,
+        });
+      } catch {
+        // Ignora archivos dañados o a medio escribir para no romper el listado completo.
+      }
     }
     return summaries;
+  }
+}
+
+async function writeAtomic(targetPath, content) {
+  const tempPath = `${targetPath}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tempPath, content, { encoding: "utf-8", flag: "wx" });
+    await rename(tempPath, targetPath);
+  } finally {
+    await rm(tempPath, { force: true });
   }
 }
 
@@ -92,6 +106,7 @@ export function renderMarkdownTranscript(session) {
     `- **ID de sesión:** \`${session.id}\``,
     `- **Estado:** \`${session.status}\``,
     `- **Agentes:** ${session.agents.join(", ")}`,
+    ...(session.workspaceDir ? [`- **Proyecto:** \`${session.workspaceDir}\``] : []),
     `- **Creada:** ${session.createdAt}`,
     `- **Actualizada:** ${session.updatedAt}`,
     "",
