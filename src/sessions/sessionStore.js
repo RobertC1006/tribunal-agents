@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { formatHighlight } from "./contextBuilder.js";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const ATTACHMENT_NAME_PATTERN = /^[a-zA-Z0-9_-]+\.(png|jpe?g|webp|gif)$/i;
@@ -93,6 +94,24 @@ export class SessionStore {
     return session;
   }
 
+  /**
+   * Lee-modifica-guarda bajo un candado de archivo (<id>.lock) que funciona entre
+   * procesos (CLI, MCP y servidor web a la vez). `mutate` recibe la versión más
+   * reciente del disco; el candado solo se retiene durante ese paso breve.
+   */
+  async update(sessionId, mutate) {
+    const lockPath = path.join(this.sessionsDir, `${sessionId}.lock`);
+    await this.ensureDir();
+    await acquireLock(lockPath);
+    try {
+      const session = await this.load(sessionId);
+      await mutate(session);
+      return await this.save(session);
+    } finally {
+      await rm(lockPath, { force: true });
+    }
+  }
+
   async load(sessionId) {
     const raw = await readFile(this.getJsonPath(sessionId), "utf-8");
     return JSON.parse(raw);
@@ -125,6 +144,33 @@ export class SessionStore {
   }
 }
 
+const LOCK_STALE_MS = 10_000;
+const LOCK_WAIT_MS = 15_000;
+
+async function acquireLock(lockPath) {
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  while (true) {
+    try {
+      await writeFile(lockPath, String(process.pid), { flag: "wx" });
+      return;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+    }
+    // Un proceso que murió con el candado tomado lo deja huérfano: se libera por antigüedad.
+    const info = await stat(lockPath).catch(() => null);
+    if (info && Date.now() - info.mtimeMs > LOCK_STALE_MS) {
+      await rm(lockPath, { force: true });
+      continue;
+    }
+    if (Date.now() > deadline) {
+      const error = new Error(`La sesión está bloqueada por otro proceso (${lockPath}). Reintenta en unos segundos.`);
+      error.statusCode = 409;
+      throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 30));
+  }
+}
+
 async function writeAtomic(targetPath, content) {
   const tempPath = `${targetPath}.${randomUUID()}.tmp`;
   try {
@@ -152,6 +198,12 @@ export function renderMarkdownTranscript(session) {
     session.context || "_Sin contexto adicional._",
     "",
   ];
+
+  if (session.highlights?.length) {
+    lines.push("## Fragmentos destacados", "");
+    for (const h of session.highlights) lines.push(`- ${formatHighlight(h)}`);
+    lines.push("");
+  }
 
   for (const round of session.rounds) {
     lines.push(`## Ronda ${round.number} — ${round.type}`);

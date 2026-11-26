@@ -5,6 +5,8 @@ El servidor MCP ([server.js](server.js)) corre sobre `stdio` sin dependencias ex
 - `abrir_caso(topic, context?, workspaceDir?, agents?, debateRounds?, timeoutSec?)`
 - `cuestionar_caso(sessionId, objection, targetAgents?)`
 - `debatir_caso(sessionId, targetAgents?, timeoutSec?)`
+- `destacar_fragmento(sessionId, round, agent, text, note?)` — fija lo que dijo un agente para que todos lo aborden en las próximas rondas
+- `quitar_destacado(sessionId, highlightId)`
 - `inspeccionar_caso(sessionId)`
 - `listar_casos()`
 - `listar_agentes()`

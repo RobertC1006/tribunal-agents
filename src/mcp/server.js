@@ -2,6 +2,7 @@
 import { createInterface } from "node:readline";
 import { loadConfig } from "../config/loadConfig.js";
 import { TribunalEngine } from "../engine/tribunalEngine.js";
+import { formatHighlight } from "../sessions/contextBuilder.js";
 import { SessionStore } from "../sessions/sessionStore.js";
 
 const TOOLS = [
@@ -81,6 +82,34 @@ const TOOLS = [
     },
   },
   {
+    name: "destacar_fragmento",
+    description:
+      "Fija un fragmento de lo que dijo un agente en una ronda. Se guarda en el caso y se envía a los magistrados en cada ronda siguiente (debate o cuestionamiento) hasta quitarlo. No llama a ninguna IA.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "ID del caso." },
+        round: { type: "integer", minimum: 1, description: "Número de ronda donde el agente lo dijo." },
+        agent: { type: "string", description: "Nombre del agente autor del fragmento." },
+        text: { type: "string", description: "Fragmento a destacar (hasta 2000 caracteres)." },
+        note: { type: "string", description: "Comentario opcional del juez sobre el fragmento." },
+      },
+      required: ["sessionId", "round", "agent", "text"],
+    },
+  },
+  {
+    name: "quitar_destacado",
+    description: "Quita un fragmento destacado de un caso (por su ID, ej. d1) para que deje de enviarse a los agentes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "ID del caso." },
+        highlightId: { type: "string", description: "ID del destacado (ej. d1)." },
+      },
+      required: ["sessionId", "highlightId"],
+    },
+  },
+  {
     name: "inspeccionar_caso",
     description: "Lee el acta completa de una sesión guardada en disco sin llamar a ninguna IA (0 tokens).",
     inputSchema: {
@@ -155,6 +184,12 @@ function formatSessionForMcp(session, store) {
     }
   }
 
+  if (session.highlights?.length) {
+    lines.push(`### 📌 Destacados por el juez`);
+    for (const h of session.highlights) lines.push(`- ${formatHighlight(h)}`);
+    lines.push("");
+  }
+
   lines.push(`---`);
   lines.push(`**Acta guardada:** \`${store.getMarkdownPath(session.id)}\``);
   return lines.join("\n");
@@ -200,6 +235,16 @@ async function handleToolCall(name, args = {}) {
       ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
     return formatSessionForMcp(session, store);
+  }
+
+  if (name === "destacar_fragmento") {
+    const { sessionId, round, agent, text, note } = args;
+    return formatSessionForMcp(await engine.highlightCase({ sessionId, round, agent, text, note }), store);
+  }
+
+  if (name === "quitar_destacado") {
+    const { sessionId, highlightId } = args;
+    return formatSessionForMcp(await engine.removeHighlight({ sessionId, highlightId }), store);
   }
 
   if (name === "inspeccionar_caso") {

@@ -10,6 +10,14 @@ export const HIGH_EFFORT_TIMEOUT_MS = 180000;
 export const XHIGH_EFFORT_TIMEOUT_MS = 300000;
 export const MIN_TIMEOUT_MS = 1000;
 export const MAX_TIMEOUT_MS = 3600000;
+export const MAX_HIGHLIGHT_CHARS = 2000;
+export const MAX_HIGHLIGHTS = 10;
+
+function badRequest(message) {
+  const error = new Error(message);
+  error.statusCode = 400;
+  return error;
+}
 
 export function resolveAgentTimeoutMs(
   agentConfig = {},
@@ -95,27 +103,6 @@ export class TribunalEngine {
   constructor({ config, store }) {
     this.config = config;
     this.store = store;
-    this.sessionLocks = new Map();
-  }
-
-  async withSessionLock(sessionId, fn) {
-    const previous = this.sessionLocks.get(sessionId) || Promise.resolve();
-    let release;
-    const current = new Promise((resolve) => {
-      release = resolve;
-    });
-    const tail = previous.then(() => current);
-    this.sessionLocks.set(sessionId, tail);
-
-    await previous;
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (this.sessionLocks.get(sessionId) === tail) {
-        this.sessionLocks.delete(sessionId);
-      }
-    }
   }
 
   /**
@@ -162,38 +149,20 @@ export class TribunalEngine {
       rounds: [],
     };
 
+    const roundOptions = { targetAgents: selectedAgents, images: resolvedImages, signal, onRound, onAgentStart, onAgentDone };
+    // Cada ronda devuelve la versión del disco, así el debate ve lo añadido entretanto (destacados).
+    let current = session;
     try {
-      await this.runRound(session, {
-        roundType: "apertura",
-        targetAgents: selectedAgents,
-        images: resolvedImages,
-        signal,
-        onRound,
-        onAgentStart,
-        onAgentDone,
-      });
-
+      current = await this.runRound(current, { ...roundOptions, roundType: "apertura" });
       for (let i = 0; i < debateRounds; i += 1) {
-        await this.runRound(session, {
-          roundType: "debate",
-          targetAgents: selectedAgents,
-          images: resolvedImages,
-          signal,
-          onRound,
-          onAgentStart,
-          onAgentDone,
-        });
+        current = await this.runRound(current, { ...roundOptions, roundType: "debate" });
       }
-
-      session.status = "dormida";
-      return session;
+      return await this.setStatus(id, "dormida");
     } catch (error) {
-      session.status = "interrumpida";
-      throw error;
-    } finally {
-      if (session.rounds.length > 0) {
-        await this.store.save(session);
+      if (current.rounds.length > 0) {
+        await this.setStatus(id, "interrumpida").catch(() => {});
       }
+      throw error;
     }
   }
 
@@ -204,35 +173,15 @@ export class TribunalEngine {
   async challengeCase({ sessionId, objection, images = [], targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
     const resolvedImages = await resolveImagePaths(images);
-    return this.withSessionLock(sessionId, async () => {
-      const session = await this.store.load(sessionId);
-      const agentsToAsk =
-        Array.isArray(targetAgents) && targetAgents.length > 0
-          ? targetAgents
-          : session.agents;
-
-      session.status = "activa";
-
-      try {
-        await this.runRound(session, {
-          roundType: "cuestionamiento",
-          targetAgents: agentsToAsk,
-          userObjection: objection,
-          images: resolvedImages,
-          timeoutMs: validatedTimeout,
-          signal,
-          onRound,
-          onAgentStart,
-          onAgentDone,
-        });
-        session.status = "dormida";
-        return session;
-      } catch (error) {
-        session.status = "interrumpida";
-        throw error;
-      } finally {
-        await this.store.save(session);
-      }
+    return this.resumeCase(sessionId, targetAgents, {
+      roundType: "cuestionamiento",
+      userObjection: objection,
+      images: resolvedImages,
+      timeoutMs: validatedTimeout,
+      signal,
+      onRound,
+      onAgentStart,
+      onAgentDone,
     });
   }
 
@@ -242,33 +191,57 @@ export class TribunalEngine {
    */
   async debateCase({ sessionId, targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
-    return this.withSessionLock(sessionId, async () => {
-      const session = await this.store.load(sessionId);
-      const agentsToAsk =
-        Array.isArray(targetAgents) && targetAgents.length > 0
-          ? targetAgents
-          : session.agents;
+    return this.resumeCase(sessionId, targetAgents, {
+      roundType: "debate",
+      timeoutMs: validatedTimeout,
+      signal,
+      onRound,
+      onAgentStart,
+      onAgentDone,
+    });
+  }
 
-      session.status = "activa";
-
-      try {
-        await this.runRound(session, {
-          roundType: "debate",
-          targetAgents: agentsToAsk,
-          timeoutMs: validatedTimeout,
-          signal,
-          onRound,
-          onAgentStart,
-          onAgentDone,
-        });
-        session.status = "dormida";
-        return session;
-      } catch (error) {
-        session.status = "interrumpida";
-        throw error;
-      } finally {
-        await this.store.save(session);
+  /**
+   * Fija un fragmento de lo que dijo un agente. Queda en la sesión y se envía
+   * a los magistrados en cada ronda siguiente hasta que se quite.
+   */
+  async highlightCase({ sessionId, round, agent, text, note = "" }) {
+    const fragment = typeof text === "string" ? text.trim() : "";
+    const cleanNote = typeof note === "string" ? note.trim() : "";
+    if (!fragment || fragment.length > MAX_HIGHLIGHT_CHARS || cleanNote.length > MAX_HIGHLIGHT_CHARS) {
+      throw badRequest(`El fragmento es obligatorio y, igual que la nota, admite hasta ${MAX_HIGHLIGHT_CHARS} caracteres.`);
+    }
+    return this.store.update(sessionId, (session) => {
+      const roundNumber = Number(round);
+      const target = session.rounds.find((r) => r.number === roundNumber);
+      if (!target?.entries.some((entry) => entry.agent === agent && !entry.error)) {
+        throw badRequest(`No hay una respuesta de "${agent}" en la ronda ${round} de ${sessionId}.`);
       }
+      const highlights = session.highlights || [];
+      if (highlights.length >= MAX_HIGHLIGHTS) {
+        throw badRequest(`Un caso admite como máximo ${MAX_HIGHLIGHTS} destacados. Quita alguno antes de añadir otro.`);
+      }
+      const next =Math.max(0, ...highlights.map((h) => Number(h.id.slice(1)) || 0)) + 1;
+      session.highlights = [...highlights, {
+        id: `d${next}`,
+        round: roundNumber,
+        agent,
+        text: fragment,
+        ...(cleanNote ? { note: cleanNote } : {}),
+        createdAt: new Date().toISOString(),
+      }];
+    });
+  }
+
+  async removeHighlight({ sessionId, highlightId }) {
+    return this.store.update(sessionId, (session) => {
+      const highlights = session.highlights || [];
+      if (!highlights.some((h) => h.id === highlightId)) {
+        const error = new Error(`El destacado "${highlightId}" no existe en ${sessionId}.`);
+        error.statusCode = 404;
+        throw error;
+      }
+      session.highlights = highlights.filter((h) => h.id !== highlightId);
     });
   }
 
@@ -319,7 +292,8 @@ export class TribunalEngine {
             cwd: session.workspaceDir,
             timeoutMs,
             images: roundImages,
-            readOnly: Boolean(session.workspaceDir),
+            // Un magistrado opina; nunca modifica archivos, haya o no carpeta de proyecto.
+            readOnly: true,
             signal,
           });
           const durationMs = Date.now() - startedAt;
@@ -354,6 +328,14 @@ export class TribunalEngine {
       })
     );
 
+    // Cada agente convierte la cancelación en una entrada con error; no se guarda
+    // como ronda válida y se corta el resto del debate.
+    if (signal?.aborted) {
+      const error = new Error("Ronda cancelada por el usuario.");
+      error.name = "AbortError";
+      throw error;
+    }
+
     const round = {
       number: roundNumber,
       type: roundType,
@@ -361,10 +343,43 @@ export class TribunalEngine {
       images: images.length ? images : undefined,
       entries,
     };
-    session.rounds.push(round);
-
-    await this.store.save(session);
+    // La ronda se añade sobre la versión más reciente del disco: si otro proceso
+    // guardó algo mientras los agentes pensaban (p. ej. un destacado), se conserva.
+    const commit = (fresh) => {
+      round.number = fresh.rounds.length + 1;
+      fresh.rounds.push(round);
+    };
+    let saved;
+    if (session.rounds.length === 0) {
+      commit(session);
+      saved = await this.store.save(session);
+    } else {
+      saved = await this.store.update(session.id, commit);
+    }
     onRound?.(round);
+    return saved;
+  }
+
+  async setStatus(sessionId, status) {
+    return this.store.update(sessionId, (session) => {
+      session.status = status;
+    });
+  }
+
+  /**
+   * Ronda sobre un caso ya guardado (cuestionamiento o réplica).
+   * Los agentes se consultan sin candado; el candado solo protege cada escritura.
+   */
+  async resumeCase(sessionId, targetAgents, roundOptions) {
+    const session = await this.store.load(sessionId);
+    const agentsToAsk = Array.isArray(targetAgents) && targetAgents.length > 0 ? targetAgents : session.agents;
+    try {
+      await this.runRound(session, { ...roundOptions, targetAgents: agentsToAsk });
+      return await this.setStatus(sessionId, "dormida");
+    } catch (error) {
+      await this.setStatus(sessionId, "interrumpida").catch(() => {});
+      throw error;
+    }
   }
 }
 

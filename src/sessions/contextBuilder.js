@@ -37,7 +37,9 @@ export function buildPrompt({ session, agent, roundType, objection = "", images 
     ].join("\n");
   }
 
-  const compactHistory = formatCompactHistory(session.rounds);
+  const compactHistory = [formatCompactHistory(session.rounds), formatHighlights(session.highlights)]
+    .filter(Boolean)
+    .join("\n\n");
 
   if (roundType === "debate") {
     return [
@@ -63,32 +65,61 @@ export function buildPrompt({ session, agent, roundType, objection = "", images 
   ].join("\n");
 }
 
+export function formatHighlight(h) {
+  return `[${h.id} · Ronda ${h.round} · ${h.agent}] "${h.text}"${h.note ? ` — Nota del juez: ${h.note}` : ""}`;
+}
+
+function formatHighlights(highlights = []) {
+  if (!highlights.length) return "";
+  return [
+    "FRAGMENTOS DESTACADOS POR EL USUARIO (JUEZ): el juez marcó estos puntos como importantes. Abórdalos explícitamente en tu respuesta.",
+    ...highlights.map((h) => `- ${formatHighlight(h)}`),
+  ].join("\n");
+}
+
+// Presupuesto fijo de contexto: el prompt deja de crecer con el número de rondas.
+const DETAILED_ROUNDS = 2;
+const BRIEF_ROUNDS = 6;
+const DETAILED_CHARS = 1200;
+const BRIEF_CHARS = 300;
+
+function clip(text, max) {
+  const flat = String(text || "").replace(/\s+/g, " ").trim();
+  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
+}
+
 function formatCompactHistory(rounds) {
   if (!rounds.length) return "(Sin intervenciones previas)";
 
-  return rounds
-    .map((round, index) => {
-      const isLatest = index === rounds.length - 1;
-      const lines = [`--- Ronda ${round.number} (${round.type}) ---`];
-      if (round.userObjection) {
-        lines.push(`Objeción del usuario: ${round.userObjection}`);
+  const kept = rounds.slice(-(DETAILED_ROUNDS + BRIEF_ROUNDS));
+  const omitted = rounds.length - kept.length;
+  const blocks = kept.map((round, index) => {
+    const detailed = index >= kept.length - DETAILED_ROUNDS;
+    const isLatest = index === kept.length - 1;
+    const max = detailed ? DETAILED_CHARS : BRIEF_CHARS;
+    const lines = [`--- Ronda ${round.number} (${round.type}) ---`];
+    if (round.userObjection) {
+      lines.push(`Objeción del usuario: ${clip(round.userObjection, max)}`);
+    }
+    for (const entry of round.entries) {
+      if (entry.error) {
+        lines.push(`- ${entry.agent}: [ERROR] ${clip(entry.error, BRIEF_CHARS)}`);
+        continue;
       }
-      for (const entry of round.entries) {
-        if (entry.error) {
-          lines.push(`- ${entry.agent}: [ERROR] ${entry.error}`);
-        } else {
-          const summary = entry.summary ?? entry.resumen ?? "";
-          const dissents = entry.dissents ?? entry.disidencias ?? "";
-          const reasoning = entry.reasoning ?? entry.razonamiento ?? "";
-          lines.push(`- ${entry.agent} | Resumen: ${summary}`);
-          lines.push(`  Disidencias: ${dissents}`);
-          if (isLatest && reasoning) {
-            const excerpt = String(reasoning).replace(/\s+/g, " ").trim().slice(0, 1200);
-            lines.push(`  Argumentos (extracto): ${excerpt}`);
-          }
-        }
+      lines.push(`- ${entry.agent} | Resumen: ${clip(entry.summary ?? entry.resumen, max)}`);
+      if (detailed) {
+        lines.push(`  Disidencias: ${clip(entry.dissents ?? entry.disidencias, max)}`);
       }
-      return lines.join("\n");
-    })
-    .join("\n\n");
+      const reasoning = entry.reasoning ?? entry.razonamiento;
+      if (isLatest && reasoning) {
+        lines.push(`  Argumentos (extracto): ${clip(reasoning, DETAILED_CHARS)}`);
+      }
+    }
+    return lines.join("\n");
+  });
+
+  if (omitted > 0) {
+    blocks.unshift(`(${omitted} rondas anteriores omitidas para mantener el contexto acotado)`);
+  }
+  return blocks.join("\n\n");
 }

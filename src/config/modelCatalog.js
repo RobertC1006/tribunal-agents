@@ -24,10 +24,24 @@ const agyExamples = [
   "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.1-pro-high",
 ];
 
+// Modelos visibles en ~/.codex/models_cache.json (codex-cli 0.172.0, noviembre de 2026).
+const codexExamples = [
+  "gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-terra", "gpt-6.1-sol",
+  "gpt-6-astra", "gpt-6-sol", "gpt-6-luna",
+  "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+];
+
 export function parseAgyModels(text) {
   return text.split(/\r?\n/).flatMap((line) => {
     const match = line.trim().match(/^([a-z0-9][a-z0-9._:-]*)(?:\t+| {2,})(\S.*)$/);
     return match ? [{ value: match[1], label: match[2], detail: match[1] }] : [];
+  });
+}
+
+export function parseOpencodeModels(text) {
+  return text.split(/\r?\n/).flatMap((line) => {
+    const id = line.trim();
+    return /^[\w.-]+\/\S+$/.test(id) ? [{ value: id, label: id, detail: "OpenCode" }] : [];
   });
 }
 
@@ -45,6 +59,14 @@ export async function modelCatalog(profile) {
     }
     return agyExamples.map((id) => ({ value: id, label: id, detail: "Ejemplo oficial · acceso sin verificar" }));
   }
+  if (profile.type === "opencode") {
+    try {
+      const stdout = await runProcess({ command: profile.command || "opencode", args: ["models"], timeoutMs: 7000 });
+      return parseOpencodeModels(stdout);
+    } catch {
+      // Sin OpenCode instalado queda la entrada manual.
+    }
+  }
   if (profile.type === "codex") {
     const filename = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "models_cache.json");
     try {
@@ -55,8 +77,9 @@ export async function modelCatalog(profile) {
         detail: model.slug,
       }));
     } catch {
-      // Los perfiles configurados y la entrada manual siguen disponibles.
+      // Sin caché (Codex recién instalado o sin usar): lista de respaldo.
     }
+    return codexExamples.map((id) => ({ value: id, label: id, detail: "Ejemplo · acceso sin verificar" }));
   }
   return [];
 }

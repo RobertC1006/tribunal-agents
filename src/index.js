@@ -76,6 +76,18 @@ async function main() {
     return;
   }
 
+  if (command === "destacar") {
+    await handleHighlight({ args, config, engine, isInteractive });
+    return;
+  }
+
+  if (command === "quitar-destacado") {
+    const [sessionId, highlightId] = args;
+    if (!sessionId || !highlightId) throw new Error("Uso: pnpm start quitar-destacado <sessionId> <idDestacado>");
+    printHighlights(await engine.removeHighlight({ sessionId, highlightId }));
+    return;
+  }
+
   if (command === "listar") {
     await handleList({ engine });
     return;
@@ -128,6 +140,7 @@ async function promptSessionFollowUp(sessionId, { config, engine, store }) {
     const next = await select(`¿Qué deseas hacer con ${sessionId}?`, [
       { value: "cuestionar", label: "Escribir cuestionamiento", detail: "envía una objeción o repregunta como juez", color: 95 },
       { value: "debatir", label: "Redebatir última ronda", detail: "los magistrados se replican entre sí", color: 93 },
+      { value: "destacar", label: "Destacar un fragmento", detail: "fíjalo para que los agentes lo aborden", color: 96 },
       { value: "volver", label: "Dejar dormida y volver al menú", detail: "0 memoria · guardada en disco", color: 90 },
     ]);
     if (!next || next === "volver") return;
@@ -135,6 +148,8 @@ async function promptSessionFollowUp(sessionId, { config, engine, store }) {
       await handleChallenge({ args: [sessionId], config, engine, store, isInteractive: true });
     } else if (next === "debatir") {
       await handleDebate({ args: [sessionId], config, engine, store, isInteractive: true });
+    } else if (next === "destacar") {
+      await handleHighlight({ args: [sessionId], config, engine, isInteractive: true });
     }
   }
 }
@@ -347,8 +362,53 @@ async function handleView({ args, config, engine, isInteractive }) {
     console.log(`${colorize("Contexto:", "1;90")} ${session.context}`);
   }
   session.rounds.forEach((round) => printRound(round, config.agents));
+  printHighlights(session);
   console.log();
   return session;
+}
+
+async function handleHighlight({ args, config, engine, isInteractive }) {
+  let [sessionId, round, agent, text, note] = args;
+  if (!sessionId && isInteractive) {
+    sessionId = await pickSession(engine, "Elige el caso");
+    if (!sessionId) return;
+  }
+  if (sessionId && !text && isInteractive) {
+    const session = await engine.inspectCase(sessionId);
+    const answers = session.rounds.flatMap((r) =>
+      r.entries.filter((e) => !e.error).map((e) => ({
+        value: `${r.number}|${e.agent}`,
+        label: `Ronda ${r.number} · ${e.agent}`,
+        detail: String(e.summary ?? "").replace(/\s+/g, " ").slice(0, 70),
+        color: agentColor(config.agents, e.agent),
+      }))
+    );
+    const picked = await select("¿De qué respuesta es el fragmento?", answers);
+    if (!picked) return;
+    [round, agent] = picked.split("|");
+    text = await askLine("Pega el fragmento a destacar (Enter para volver):");
+    if (!text) return;
+    note = (await askLine("Nota para los agentes (opcional, Enter para omitir):")) || "";
+  }
+  if (!sessionId || !round || !agent || !text) {
+    throw new Error('Uso: pnpm start destacar <sessionId> <ronda> <agente> "<fragmento>" ["nota"]');
+  }
+  printHighlights(await engine.highlightCase({ sessionId, round, agent, text, note }));
+}
+
+function printHighlights(session) {
+  const highlights = session.highlights || [];
+  console.log(`\n${divider(`Destacados de ${session.id} (${highlights.length})`, 96)}`);
+  if (!highlights.length) {
+    console.log(colorize("  Sin fragmentos destacados.", 90));
+    return;
+  }
+  for (const h of highlights) {
+    console.log(`  ${colorize(`📌 ${h.id}`, "1;96")} ${colorize(`Ronda ${h.round} · ${h.agent}`, 90)}`);
+    console.log(`     “${h.text}”`);
+    if (h.note) console.log(`     ${colorize("Nota:", "1;90")} ${h.note}`);
+  }
+  console.log(colorize("  Se enviarán a los agentes en la próxima ronda de debate o cuestionamiento.", 90));
 }
 
 async function handleList({ engine }) {
@@ -460,8 +520,10 @@ ${colorize("Comandos directos:", "1;93")}
   pnpm start ver [id]      ${colorize("(inspecciona sin gastar tokens)", 90)}
   pnpm start cuestionar [id] "<objeción>" "[agentes]"
   pnpm start debatir [id]  ${colorize("(lanza una ronda de réplica entre agentes)", 90)}
+  pnpm start destacar [id] [ronda] [agente] "[fragmento]" "[nota]"  ${colorize("(fija un fragmento para las próximas rondas)", 90)}
+  pnpm start quitar-destacado <id> <idDestacado>
   pnpm start agentes       ${colorize("(lista perfiles con sus colores, modelos y timeout)", 90)}
-  pnpm start configurar    ${colorize("(cambiar modelo, clonar, predeterminados, eliminar o timeout)", 90)}
+  pnpm start configurar    ${colorize("(añadir perfil, cambiar modelo, clonar, predeterminados, eliminar o timeout)", 90)}
 `);
 }
 

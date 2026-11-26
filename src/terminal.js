@@ -4,6 +4,7 @@ const PROVIDER_COLORS = {
   claude: 95, // magenta brillante
   codex: 92,  // verde brillante
   agy: 96,    // cian brillante
+  opencode: 94, // azul brillante
   ollama: 93, // amarillo brillante
   mock: 90,   // gris tenue
 };

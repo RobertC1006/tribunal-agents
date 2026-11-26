@@ -3,6 +3,7 @@ import { ClaudeAgent } from "./claudeAgent.js";
 import { CodexAgent } from "./codexAgent.js";
 import { MockAgent } from "./mockAgent.js";
 import { OllamaAgent } from "./ollamaAgent.js";
+import { OpencodeAgent } from "./opencodeAgent.js";
 
 /**
  * Mapa central de módulos de agente.
@@ -13,6 +14,7 @@ const AGENT_MODULES = {
   claude: ClaudeAgent,
   codex: CodexAgent,
   agy: AgyAgent,
+  opencode: OpencodeAgent,
   ollama: OllamaAgent,
   mock: MockAgent,
 };

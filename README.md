@@ -4,11 +4,11 @@
 
 # Agent Tribunal
 
-Proyecto Open Source en **Node.js (ESM) + Express** con arquitectura modular para convocar múltiples agentes de IA (`claude`, `codex`, `agy` y modelos locales como **Ollama**), hacer que debatan en apertura ciega y réplica, y permitir que el usuario audite y cuestione sus resultados desde CLI, API HTTP o **MCP**.
+Proyecto Open Source en **Node.js (ESM) + Express** con arquitectura modular para convocar múltiples agentes de IA (`claude`, `codex`, `agy`, `opencode` y modelos locales como **Ollama**), hacer que debatan en apertura ciega y réplica, y permitir que el usuario audite y cuestione sus resultados desde CLI, API HTTP o **MCP**.
 
 ## Instalación rápida
 
-Requisitos: **Node.js 20+** y **pnpm**. Los CLIs de IA (`claude`, `codex`, `agy` u `ollama`) son opcionales: el repositorio incluye una configuración predeterminada con simuladores (`mock`) para probarlo sin gastar tokens.
+Requisitos: **Node.js 20+** y **pnpm**. Los CLIs de IA (`claude`, `codex`, `agy`, `opencode` u `ollama`) son opcionales: el repositorio incluye una configuración predeterminada con simuladores (`mock`) para probarlo sin gastar tokens.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -35,7 +35,7 @@ pnpm start ver [sessionId]                   # Inspecciona un acta guardada (0 t
 pnpm start cuestionar [sessionId] "<objeción>" "[agentes]"
 pnpm start debatir [sessionId] "[agentes]"   # Lanza una ronda adicional de réplica
 pnpm start agentes                           # Muestra perfiles, modelos y timeouts
-pnpm start configurar                        # Cambiar modelo, clonar, predeterminados, eliminar o timeout
+pnpm start configurar                        # Añadir perfil (claude, codex, agy, opencode, ollama), cambiar modelo, clonar, predeterminados, eliminar o timeout
 ```
 
 > **Consejo práctico:** empieza con **1 ronda de debate** (`debateRounds: 1`, valor por defecto = 2 rondas en total: apertura ciega + debate). Al terminar, la CLI te preguntará si deseas escribir un cuestionamiento, redebatir la última ronda o dejar la sesión dormida (0 procesos en memoria).
@@ -58,12 +58,16 @@ Escucha por defecto en `http://127.0.0.1:3000` (configurable con `HOST` y `PORT`
 - `GET /api/casos/:sessionId`
 - `POST /api/casos/:sessionId/cuestionar` — `{ "objection": "¿Y si hay 500 sesiones?" }`
 - `POST /api/casos/:sessionId/debatir` — `{ "targetAgents": ["claude", "codex"] }`
+- `POST /api/casos/:sessionId/destacados` — `{ "round": 1, "agent": "claude", "text": "fragmento", "note": "opcional" }`
+- `DELETE /api/casos/:sessionId/destacados/:highlightId`
+
+**Destacar fragmentos:** en el visor web selecciona texto de la respuesta de un agente y pulsa «📌 Destacar» (también `pnpm start destacar` o la herramienta MCP `destacar_fragmento`). El fragmento queda fijado en el caso y se envía a todos los magistrados en cada ronda siguiente hasta que lo quites.
 
 ## Arquitectura
 
 ```text
 src/
-├── agents/                     # Conectores: claude, codex, agy, ollama y mock
+├── agents/                     # Conectores: claude, codex, agy, opencode, ollama y mock
 ├── sessions/                   # Persistencia atómica (JSON + acta MD) y compactación de contexto
 ├── engine/tribunalEngine.js    # Motor central compartido por CLI, Express y MCP
 ├── api/                        # Servidor Express local
