@@ -17,10 +17,16 @@ export function createCasesRouter(engine) {
     }
   });
 
-  // Abrir un nuevo caso (Ronda 1 apertura + Ronda 2 debate)
+  // Abrir un nuevo caso (Ronda 1 apertura + rondas de debate)
   router.post("/", async (req, res, next) => {
     try {
-      const { topic, context = "", agents, includeDebateRound = true } = req.body || {};
+      const {
+        topic,
+        context = "",
+        agents,
+        includeDebateRound = true,
+        debateRounds,
+      } = req.body || {};
 
       if (!topic || typeof topic !== "string") {
         return res.status(400).json({
@@ -29,11 +35,18 @@ export function createCasesRouter(engine) {
         });
       }
 
+      if (agents !== undefined && (!Array.isArray(agents) || agents.some((a) => typeof a !== "string" || !a.trim()))) {
+        return res.status(400).json({
+          ok: false,
+          error: "El campo 'agents' debe ser un arreglo de nombres de agente.",
+        });
+      }
+
       const session = await engine.abrirCaso({
         topic,
         context,
         agents,
-        includeDebateRound,
+        ...(debateRounds !== undefined ? { debateRounds } : { includeDebateRound }),
       });
 
       res.status(201).json({ ok: true, data: session });
@@ -67,6 +80,16 @@ export function createCasesRouter(engine) {
         return res.status(400).json({
           ok: false,
           error: "El campo 'objection' es obligatorio y debe ser texto.",
+        });
+      }
+
+      if (
+        targetAgents !== undefined &&
+        (!Array.isArray(targetAgents) || targetAgents.some((a) => typeof a !== "string" || !a.trim()))
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "El campo 'targetAgents' debe ser un arreglo de nombres de agente.",
         });
       }
 

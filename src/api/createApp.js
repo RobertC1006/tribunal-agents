@@ -19,7 +19,13 @@ export function createApp({ config, engine }) {
 
   // Manejador centralizado de errores
   app.use((error, _req, res, _next) => {
-    res.status(500).json({
+    const status =
+      Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 600
+        ? error.statusCode
+        : Number.isInteger(error.status) && error.status >= 400 && error.status < 600
+          ? error.status
+          : 500;
+    res.status(status).json({
       ok: false,
       error: error.message || "Error interno en el Tribunal.",
     });

@@ -19,14 +19,18 @@ const AGENT_MODULES = {
 
 export function createAgent(name, agentConfig) {
   if (!agentConfig) {
-    throw new Error(`Agente "${name}" no existe en tribunal.config.json.`);
+    const error = new Error(`Agente "${name}" no existe en tribunal.config.json.`);
+    error.statusCode = 400;
+    throw error;
   }
 
   const AgentClass = AGENT_MODULES[agentConfig.type];
   if (!AgentClass) {
-    throw new Error(
+    const error = new Error(
       `Tipo de agente no soportado para "${name}": "${agentConfig.type}". Tipos disponibles: ${Object.keys(AGENT_MODULES).join(", ")}`
     );
+    error.statusCode = 400;
+    throw error;
   }
 
   return new AgentClass(name, agentConfig);

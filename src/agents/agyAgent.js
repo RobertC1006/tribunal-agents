@@ -1,4 +1,4 @@
-import { BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 /**
  * Módulo específico para Antigravity CLI (`agy`).
@@ -13,8 +13,7 @@ export class AgyAgent extends BaseAgent {
     if (Array.isArray(this.config.extraArgs)) {
       args.push(...this.config.extraArgs);
     }
-    args.push(prompt);
-    return args;
+    return appendPromptArg(args, prompt);
   }
 
   async ask({ prompt }) {

@@ -24,7 +24,9 @@ export class TribunalEngine {
     debateRounds = includeDebateRound ? 1 : 0, onRound,
   }) {
     if (!Number.isSafeInteger(debateRounds) || debateRounds < 0) {
-      throw new Error("El número de rondas de debate debe ser un entero no negativo.");
+      const error = new Error("El número de rondas de debate debe ser un entero no negativo.");
+      error.statusCode = 400;
+      throw error;
     }
 
     const selectedAgents =

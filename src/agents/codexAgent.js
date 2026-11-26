@@ -1,4 +1,4 @@
-import { BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 /**
  * Módulo específico para Codex CLI (`codex`).
@@ -13,8 +13,7 @@ export class CodexAgent extends BaseAgent {
     if (Array.isArray(this.config.extraArgs)) {
       args.push(...this.config.extraArgs);
     }
-    args.push(prompt);
-    return args;
+    return appendPromptArg(args, prompt);
   }
 
   async ask({ prompt }) {

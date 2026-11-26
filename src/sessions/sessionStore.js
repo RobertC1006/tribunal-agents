@@ -1,6 +1,19 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+export function assertValidSessionId(sessionId) {
+  if (typeof sessionId !== "string" || !SESSION_ID_PATTERN.test(sessionId)) {
+    const error = new Error(
+      `ID de sesión inválido: "${sessionId}". Usa solo letras, números, guiones y guiones bajos.`
+    );
+    error.code = "INVALID_SESSION_ID";
+    error.statusCode = 400;
+    throw error;
+  }
+}
+
 /**
  * Maneja la persistencia de sesiones "dormidas" en disco.
  * Cada caso se guarda en:
@@ -17,10 +30,12 @@ export class SessionStore {
   }
 
   getJsonPath(sessionId) {
+    assertValidSessionId(sessionId);
     return path.join(this.sessionsDir, `${sessionId}.json`);
   }
 
   getMarkdownPath(sessionId) {
+    assertValidSessionId(sessionId);
     return path.join(this.sessionsDir, `${sessionId}.md`);
   }
 

@@ -11,6 +11,7 @@ export function createAgentsRouter(config) {
     const configured = Object.entries(config.agents).map(([name, cfg]) => ({
       name,
       type: cfg.type,
+      model: cfg.model,
       role: cfg.role,
       isDefault: config.defaultAgents.includes(name),
     }));
