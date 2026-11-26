@@ -104,7 +104,7 @@ export class TribunalEngine {
    */
   async openCase({
     topic, context = "", workspaceDir = "", images = [], agents, includeDebateRound = true,
-    debateRounds = includeDebateRound ? 1 : 0, timeoutMs, onRound, onAgentStart, onAgentDone,
+    debateRounds = includeDebateRound ? 1 : 0, timeoutMs, signal, onRound, onAgentStart, onAgentDone,
   }) {
     if (!Number.isSafeInteger(debateRounds) || debateRounds < 0 || debateRounds > MAX_DEBATE_ROUNDS) {
       const error = new Error(
@@ -145,6 +145,7 @@ export class TribunalEngine {
         roundType: "apertura",
         targetAgents: selectedAgents,
         images: resolvedImages,
+        signal,
         onRound,
         onAgentStart,
         onAgentDone,
@@ -155,6 +156,7 @@ export class TribunalEngine {
           roundType: "debate",
           targetAgents: selectedAgents,
           images: resolvedImages,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -177,7 +179,7 @@ export class TribunalEngine {
    * Despierta temporalmente una sesión dormida, inyecta la objeción del usuario,
    * recoge las nuevas respuestas y vuelve a guardarla como "dormida".
    */
-  async challengeCase({ sessionId, objection, images = [], targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+  async challengeCase({ sessionId, objection, images = [], targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
     const resolvedImages = await resolveImagePaths(images);
     return this.withSessionLock(sessionId, async () => {
@@ -196,6 +198,7 @@ export class TribunalEngine {
           userObjection: objection,
           images: resolvedImages,
           timeoutMs: validatedTimeout,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -215,7 +218,7 @@ export class TribunalEngine {
    * Despierta una sesión dormida para que los magistrados debatan entre sí
    * sobre la última ronda (apertura o cuestionamiento previo).
    */
-  async debateCase({ sessionId, targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+  async debateCase({ sessionId, targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
     return this.withSessionLock(sessionId, async () => {
       const session = await this.store.load(sessionId);
@@ -231,6 +234,7 @@ export class TribunalEngine {
           roundType: "debate",
           targetAgents: agentsToAsk,
           timeoutMs: validatedTimeout,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -259,7 +263,7 @@ export class TribunalEngine {
 
   async runRound(
     session,
-    { roundType, targetAgents, userObjection = "", images = [], timeoutMs: roundTimeoutMs, onRound, onAgentStart, onAgentDone },
+    { roundType, targetAgents, userObjection = "", images = [], timeoutMs: roundTimeoutMs, signal, onRound, onAgentStart, onAgentDone },
   ) {
     const agents = targetAgents.map((name) =>
       createAgent(name, this.config.agents[name])
@@ -296,6 +300,8 @@ export class TribunalEngine {
             cwd: session.workspaceDir,
             timeoutMs,
             images: roundImages,
+            readOnly: Boolean(session.workspaceDir),
+            signal,
           });
           const durationMs = Date.now() - startedAt;
           onAgentDone?.({ agent: agent.name, roundNumber, roundType, durationMs, ok: true });

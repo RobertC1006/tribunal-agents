@@ -139,6 +139,17 @@ async function promptSessionFollowUp(sessionId, { config, engine, store }) {
   }
 }
 
+async function withAbortOnSigint(fn) {
+  const controller = new AbortController();
+  const onSigint = () => controller.abort();
+  process.once("SIGINT", onSigint);
+  try {
+    return await fn(controller.signal);
+  } finally {
+    process.off("SIGINT", onSigint);
+  }
+}
+
 async function handleOpen({ args, config, engine, store, isInteractive }) {
   let [topic, context = "", agentsCsv, debateRounds = "1", workspaceDir = "", timeoutSec = ""] = args;
   let agents = parseAgentNames(agentsCsv);
@@ -190,21 +201,24 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
 
   const progress = createRoundProgress(config.agents);
   try {
-    const session = await engine.openCase({
-      topic,
-      context,
-      workspaceDir,
-      images,
-      agents,
-      debateRounds: /^\d+$/.test(debateRounds) ? Number(debateRounds) : NaN,
-      ...(parsedTimeoutMs !== undefined ? { timeoutMs: parsedTimeoutMs } : {}),
-      onAgentStart: (ev) => progress.start(ev),
-      onAgentDone: (ev) => progress.done(ev),
-      onRound: (round) => {
-        progress.stop();
-        printRound(round, config.agents);
-      },
-    });
+    const session = await withAbortOnSigint((signal) =>
+      engine.openCase({
+        topic,
+        context,
+        workspaceDir,
+        images,
+        agents,
+        debateRounds: /^\d+$/.test(debateRounds) ? Number(debateRounds) : NaN,
+        ...(parsedTimeoutMs !== undefined ? { timeoutMs: parsedTimeoutMs } : {}),
+        signal,
+        onAgentStart: (ev) => progress.start(ev),
+        onAgentDone: (ev) => progress.done(ev),
+        onRound: (round) => {
+          progress.stop();
+          printRound(round, config.agents);
+        },
+      })
+    );
     printSavedSession(session, store);
     return session;
   } finally {
@@ -247,18 +261,21 @@ async function handleChallenge({ args, config, engine, store, isInteractive }) {
   console.log(`\n${divider(`Reabriendo ${sessionId}`, 95)}\n`);
   const progress = createRoundProgress(config.agents);
   try {
-    const session = await engine.challengeCase({
-      sessionId,
-      objection,
-      images,
-      targetAgents,
-      onAgentStart: (ev) => progress.start(ev),
-      onAgentDone: (ev) => progress.done(ev),
-      onRound: (round) => {
-        progress.stop();
-        printRound(round, config.agents);
-      },
-    });
+    const session = await withAbortOnSigint((signal) =>
+      engine.challengeCase({
+        sessionId,
+        objection,
+        images,
+        targetAgents,
+        signal,
+        onAgentStart: (ev) => progress.start(ev),
+        onAgentDone: (ev) => progress.done(ev),
+        onRound: (round) => {
+          progress.stop();
+          printRound(round, config.agents);
+        },
+      })
+    );
     printSavedSession(session, store);
   } finally {
     progress.stop();
@@ -293,16 +310,19 @@ async function handleDebate({ args, config, engine, store, isInteractive }) {
   console.log(`\n${divider(`Réplica en ${sessionId}`, TRIBUNAL_GOLD)}\n`);
   const progress = createRoundProgress(config.agents);
   try {
-    const session = await engine.debateCase({
-      sessionId,
-      targetAgents,
-      onAgentStart: (ev) => progress.start(ev),
-      onAgentDone: (ev) => progress.done(ev),
-      onRound: (round) => {
-        progress.stop();
-        printRound(round, config.agents);
-      },
-    });
+    const session = await withAbortOnSigint((signal) =>
+      engine.debateCase({
+        sessionId,
+        targetAgents,
+        signal,
+        onAgentStart: (ev) => progress.start(ev),
+        onAgentDone: (ev) => progress.done(ev),
+        onRound: (round) => {
+          progress.stop();
+          printRound(round, config.agents);
+        },
+      })
+    );
     printSavedSession(session, store);
   } finally {
     progress.stop();

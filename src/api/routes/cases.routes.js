@@ -76,12 +76,18 @@ export function createCasesRouter(engine) {
             ? Math.round(Number(timeoutSec) * 1000)
             : undefined;
 
+      const controller = new AbortController();
+      res.on("close", () => {
+        if (!res.writableEnded) controller.abort();
+      });
+
       const session = await engine.openCase({
         topic,
         context,
         workspaceDir,
         images: allImages,
         agents,
+        signal: controller.signal,
         ...(debateRounds !== undefined ? { debateRounds } : { includeDebateRound }),
         ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
       });
@@ -135,11 +141,17 @@ export function createCasesRouter(engine) {
         : [];
       const allImages = [...(Array.isArray(images) ? images : []), ...savedUploads];
 
+      const controller = new AbortController();
+      res.on("close", () => {
+        if (!res.writableEnded) controller.abort();
+      });
+
       const session = await engine.challengeCase({
         sessionId: req.params.sessionId,
         objection,
         images: allImages,
         targetAgents,
+        signal: controller.signal,
       });
 
       res.json({ ok: true, data: session });
@@ -176,9 +188,15 @@ export function createCasesRouter(engine) {
             ? Math.round(Number(timeoutSec) * 1000)
             : undefined;
 
+      const controller = new AbortController();
+      res.on("close", () => {
+        if (!res.writableEnded) controller.abort();
+      });
+
       const session = await engine.debateCase({
         sessionId: req.params.sessionId,
         targetAgents,
+        signal: controller.signal,
         ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
       });
 
