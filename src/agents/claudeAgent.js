@@ -1,9 +1,16 @@
 import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
+const CLAUDE_EFFORT_MAP = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "high",
+};
+
 /**
  * Módulo específico para Claude Code CLI (`claude`).
  * Aquí viven los flags y particularidades propias de Claude
- * (ej. modo print `-p`, selección de modelo, futuro `--resume`).
+ * (ej. modo print `-p`, selección de modelo, esfuerzo de razonamiento).
  */
 export class ClaudeAgent extends BaseAgent {
   buildArgs(prompt, { readOnly = false } = {}) {
@@ -12,6 +19,11 @@ export class ClaudeAgent extends BaseAgent {
       args.push("--model", this.config.model);
     }
     const extraArgs = Array.isArray(this.config.extraArgs) ? this.config.extraArgs : [];
+    const hasEffort = extraArgs.some((arg) => arg === "--effort" || arg.startsWith("--effort="));
+    const mappedEffort = CLAUDE_EFFORT_MAP[String(this.config.reasoningEffort || "").toLowerCase()];
+    if (mappedEffort && !hasEffort) {
+      args.push("--effort", mappedEffort);
+    }
     const hasPermissionMode = extraArgs.some((arg) => arg === "--permission-mode" || arg.startsWith("--permission-mode="));
     if (readOnly && !hasPermissionMode) {
       args.push("--permission-mode", "plan");

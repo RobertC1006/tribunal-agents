@@ -76,6 +76,7 @@ test("ClaudeAgent y CodexAgent aplican flags reales de solo lectura cuando readO
     "gpt-5",
     "-s",
     "read-only",
+    "--skip-git-repo-check",
     "hola",
   ]);
 });
