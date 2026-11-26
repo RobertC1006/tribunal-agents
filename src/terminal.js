@@ -65,6 +65,182 @@ export function divider(label = "", color = TRIBUNAL_GOLD, output = process.stdo
   return `${colorize("══", TRIBUNAL_GOLD, output)} ${colorize(label, `1;${color}`, output)} ${colorize("═".repeat(rest), 90, output)}`;
 }
 
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+const ANSI_RE = /\x1b\[[0-9;]*m/g;
+
+function visibleLength(text) {
+  return text.replace(ANSI_RE, "").length;
+}
+
+function colorizeWords(text, code, output) {
+  return text
+    .split(/(\s+)/)
+    .map((part) => (part.trim() ? colorize(part, code, output) : part))
+    .join("");
+}
+
+function formatInlineMarkdown(text, output = process.stdout) {
+  let result = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label) =>
+    colorizeWords(label, "4;96", output)
+  );
+  result = result.replace(/`([^`]+)`/g, (_m, code) => colorizeWords(code, 96, output));
+  result = result.replace(/\*\*([^*]+)\*\*/g, (_m, bold) => colorizeWords(bold, "1;97", output));
+  result = result.replace(/__([^_]+)__/g, (_m, bold) => colorizeWords(bold, "1;97", output));
+  return result;
+}
+
+function wrapStyledText(text, width) {
+  const maxWidth = Math.max(20, width);
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return [""];
+
+  const lines = [];
+  let current = words[0];
+  let currentLen = visibleLength(current);
+
+  for (let i = 1; i < words.length; i += 1) {
+    const word = words[i];
+    const wordLen = visibleLength(word);
+    if (currentLen + 1 + wordLen <= maxWidth) {
+      current += ` ${word}`;
+      currentLen += 1 + wordLen;
+    } else {
+      lines.push(current);
+      current = word;
+      currentLen = wordLen;
+    }
+  }
+  lines.push(current);
+  return lines;
+}
+
+/**
+ * Convierte texto con Markdown básico en líneas ajustadas al ancho de terminal,
+ * respetando párrafos, encabezados, listas con viñetas y numeradas.
+ */
+export function renderRichLines(text, { width = 76, output = process.stdout } = {}) {
+  const normalized = String(text || "").replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  const result = [];
+  for (const rawLine of normalized.split("\n")) {
+    const line = rawLine.trimEnd();
+    if (!line.trim()) {
+      if (result.length && result[result.length - 1] !== "") result.push("");
+      continue;
+    }
+
+    const headingMatch = line.match(/^\s*#{1,6}\s+(.*)$/);
+    if (headingMatch) {
+      const styled = formatInlineMarkdown(headingMatch[1], output);
+      for (const wrapped of wrapStyledText(styled, width)) {
+        result.push(colorize(wrapped, `1;${TRIBUNAL_GOLD}`, output));
+      }
+      continue;
+    }
+
+    const bulletMatch = line.match(/^(\s*)[-*+]\s+(.*)$/);
+    if (bulletMatch) {
+      const indent = " ".repeat(Math.min(4, bulletMatch[1].length));
+      const styled = formatInlineMarkdown(bulletMatch[2], output);
+      const wrapped = wrapStyledText(styled, Math.max(20, width - indent.length - 2));
+      wrapped.forEach((chunk, idx) => {
+        const prefix = idx === 0 ? `${indent}${colorize("•", TRIBUNAL_GOLD, output)} ` : `${indent}  `;
+        result.push(`${prefix}${chunk}`);
+      });
+      continue;
+    }
+
+    const numMatch = line.match(/^(\s*)(\d+[.)])\s+(.*)$/);
+    if (numMatch) {
+      const indent = " ".repeat(Math.min(4, numMatch[1].length));
+      const marker = `${numMatch[2]} `;
+      const styled = formatInlineMarkdown(numMatch[3], output);
+      const wrapped = wrapStyledText(styled, Math.max(20, width - indent.length - marker.length));
+      wrapped.forEach((chunk, idx) => {
+        const prefix = idx === 0
+          ? `${indent}${colorize(numMatch[2], `1;${TRIBUNAL_GOLD}`, output)} `
+          : `${indent}${" ".repeat(marker.length)}`;
+        result.push(`${prefix}${chunk}`);
+      });
+      continue;
+    }
+
+    const styled = formatInlineMarkdown(line, output);
+    for (const wrapped of wrapStyledText(styled, width)) {
+      result.push(wrapped);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Indicador animado en vivo mientras los magistrados responden en paralelo.
+ */
+export function createRoundProgress(agentsConfig, output = process.stdout) {
+  const isTTY = Boolean(output?.isTTY);
+  let timer = null;
+  let frame = 0;
+  let roundMeta = null;
+  const states = new Map();
+
+  function render() {
+    if (!isTTY || !roundMeta) return;
+    const spin = colorize(SPINNER_FRAMES[frame % SPINNER_FRAMES.length], TRIBUNAL_GOLD_BOLD, output);
+    frame += 1;
+    const header = colorize(`Ronda ${roundMeta.roundNumber} · ${roundMeta.roundType.toUpperCase()}`, 1, output);
+    const items = [];
+    for (const [name, info] of states.entries()) {
+      const color = agentColor(agentsConfig, name);
+      if (info.status === "running") {
+        const sec = Math.floor((Date.now() - info.startedAt) / 1000);
+        items.push(`${colorize(name, color)} ${colorize(`${sec}s`, 90, output)}`);
+      } else if (info.ok) {
+        const sec = (info.durationMs / 1000).toFixed(1);
+        items.push(`${colorize(name, color)} ${colorize(`✓ ${sec}s`, 92, output)}`);
+      } else {
+        items.push(`${colorize(name, color)} ${colorize("✗", 91, output)}`);
+      }
+    }
+    const width = Math.max(20, (output.columns || 80) - 1);
+    const line = `${spin} ${header}  ${items.join("  ")}`;
+    output.write(`\r\x1b[2K${line.slice(0, width + 80)}`);
+  }
+
+  function start({ agent, roundNumber, roundType }) {
+    if (!roundMeta || roundMeta.roundNumber !== roundNumber) {
+      roundMeta = { roundNumber, roundType };
+      states.clear();
+    }
+    states.set(agent, { status: "running", startedAt: Date.now() });
+    if (isTTY && !timer) {
+      render();
+      timer = setInterval(render, 140);
+    }
+  }
+
+  function done({ agent, ok, durationMs }) {
+    states.set(agent, { status: "done", ok, durationMs });
+    if (isTTY) render();
+  }
+
+  function stop() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    if (isTTY && roundMeta) {
+      output.write("\r\x1b[2K");
+    }
+    roundMeta = null;
+    states.clear();
+  }
+
+  return { start, done, stop };
+}
+
 export function askLine(label, input = process.stdin, output = process.stdout) {
   return new Promise((resolve) => {
     const reader = createInterface({ input, output });

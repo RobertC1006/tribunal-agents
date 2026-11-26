@@ -36,14 +36,14 @@ test("buildPrompt y TribunalEngine propagan workspaceDir para investigar código
       store,
     });
 
-    const session = await engine.abrirCaso({
+    const session = await engine.openCase({
       topic: "Revisar módulo",
       workspaceDir: tempDir,
       debateRounds: 0,
     });
 
     assert.equal(session.workspaceDir, path.resolve(tempDir));
-    const reloaded = await engine.inspeccionarCaso(session.id);
+    const reloaded = await engine.inspectCase(session.id);
     assert.equal(reloaded.workspaceDir, path.resolve(tempDir));
   } finally {
     await rm(tempDir, { recursive: true, force: true });
@@ -118,6 +118,7 @@ test("servidor MCP responde initialize, tools/list y ejecuta abrir_caso, listar_
     assert.deepEqual(toolNames, [
       "abrir_caso",
       "cuestionar_caso",
+      "debatir_caso",
       "inspeccionar_caso",
       "listar_agentes",
       "listar_casos",

@@ -22,13 +22,13 @@ test("parseAgentOutput soporta negritas, encabezados Markdown y listas sin falso
   ].join("\n");
 
   const parsed = parseAgentOutput(markdownOutput);
-  assert.equal(parsed.resumen, "Usar SQLite local para consultas rápidas.");
+  assert.equal(parsed.summary, "Usar SQLite local para consultas rápidas.");
   assert.equal(
-    parsed.disidencias,
+    parsed.dissents,
     "Difiero de mantener archivos JSON cuando haya búsquedas complejas.",
   );
   assert.equal(
-    parsed.razonamiento,
+    parsed.reasoning,
     "Resumen de la evaluación: SQLite evita escanear cientos de archivos.\nTambién mantiene cero dependencias de servidor.",
   );
 });
@@ -42,15 +42,15 @@ test("parseAgentOutput soporta negritas con dos puntos dentro y fuera", () => {
   ].join("\n");
 
   const parsed = parseAgentOutput(boldOutput);
-  assert.equal(parsed.resumen, "Mantener el motor desacoplado.");
-  assert.equal(parsed.disidencias, "Falta validar el formato del sessionId.");
+  assert.equal(parsed.summary, "Mantener el motor desacoplado.");
+  assert.equal(parsed.dissents, "Falta validar el formato del sessionId.");
   assert.equal(
-    parsed.razonamiento,
+    parsed.reasoning,
     "Separar el motor permite conectar CLI, HTTP y MCP sin duplicar lógica.",
   );
 });
 
-test("los conectores CLI protegen prompts que empiezan con guion", () => {
+test("los conectores CLI protegen prompts que empiezan con guion y ubican --model antes de -p en agy", () => {
   const claude = createAgent("claude", { type: "claude", model: "sonnet" });
   assert.deepEqual(claude.buildArgs("-tema"), ["-p", "--model", "sonnet", "--", "-tema"]);
 
@@ -58,7 +58,20 @@ test("los conectores CLI protegen prompts que empiezan con guion", () => {
   assert.deepEqual(codex.buildArgs("-tema"), ["exec", "-m", "gpt-5", "--", "-tema"]);
 
   const agy = createAgent("agy", { type: "agy" });
-  assert.deepEqual(agy.buildArgs("-tema"), ["-p", "--", "-tema"]);
+  assert.deepEqual(agy.buildArgs("-tema"), ["-p=-tema"]);
+
+  const agyWithModel = createAgent("agy", { type: "agy", model: "gemini-4-carbon-high" });
+  assert.deepEqual(agyWithModel.buildArgs("hola"), [
+    "--model",
+    "gemini-4-carbon-high",
+    "-p",
+    "hola",
+  ]);
+  assert.deepEqual(agyWithModel.buildArgs("-tema"), [
+    "--model",
+    "gemini-4-carbon-high",
+    "-p=-tema",
+  ]);
 });
 
 test("runProcess fuerza SIGKILL si el proceso hijo ignora SIGTERM al vencer el timeout", async () => {

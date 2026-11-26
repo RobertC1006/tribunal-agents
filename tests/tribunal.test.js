@@ -78,13 +78,13 @@ test("flujo completo: abrir caso, quedar dormida, inspeccionar y cuestionar", as
     const engine = new TribunalEngine({ config, store });
 
     await assert.rejects(
-      engine.abrirCaso({ topic: "Rondas inválidas", debateRounds: -1 }),
+      engine.openCase({ topic: "Rondas inválidas", debateRounds: -1 }),
       /entero no negativo/,
     );
 
     // 1. Abrir caso (Ronda 1 apertura + Ronda 2 debate)
     const visibleRounds = [];
-    const created = await engine.abrirCaso({
+    const created = await engine.openCase({
       topic: "¿Monolito o microservicios?",
       context: "Equipo de 2 personas y 1 mes para MVP",
       onRound: (round) => visibleRounds.push(round.type),
@@ -97,12 +97,12 @@ test("flujo completo: abrir caso, quedar dormida, inspeccionar y cuestionar", as
     assert.deepEqual(visibleRounds, ["apertura", "debate"]);
 
     // 2. Inspeccionar sesión dormida desde disco
-    const loaded = await engine.inspeccionarCaso(created.id);
+    const loaded = await engine.inspectCase(created.id);
     assert.equal(loaded.id, created.id);
     assert.equal(loaded.topic, "¿Monolito o microservicios?");
 
     // 3. Cuestionar solo a dos agentes
-    const updated = await engine.cuestionarCaso({
+    const updated = await engine.challengeCase({
       sessionId: created.id,
       objection: "¿Y si necesitamos desplegar offline en una laptop de 16GB?",
       targetAgents: ["codex-sim", "local-sim"],
@@ -116,12 +116,12 @@ test("flujo completo: abrir caso, quedar dormida, inspeccionar y cuestionar", as
     assert.deepEqual(visibleRounds, ["apertura", "debate", "cuestionamiento"]);
 
     // 4. Listar sesiones guardadas
-    const list = await engine.listarCasos();
+    const list = await engine.listCases();
     assert.equal(list.length, 1);
     assert.equal(list[0].roundsCount, 3);
 
     const participants = ["claude-sim", "codex-sim"];
-    const repeated = await engine.abrirCaso({
+    const repeated = await engine.openCase({
       topic: "¿JSON o SQLite?",
       agents: participants,
       debateRounds: 2,

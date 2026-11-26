@@ -9,7 +9,9 @@ import {
   askLine,
   banner,
   colorize,
+  createRoundProgress,
   divider,
+  renderRichLines,
   select,
   TRIBUNAL_GOLD,
 } from "./terminal.js";
@@ -55,22 +57,27 @@ async function main() {
   const engine = new TribunalEngine({ config, store });
 
   if (command === "abrir") {
-    await handleAbrir({ args, config, engine, store, isInteractive });
+    await handleOpen({ args, config, engine, store, isInteractive });
     return;
   }
 
   if (command === "cuestionar") {
-    await handleCuestionar({ args, config, engine, store, isInteractive });
+    await handleChallenge({ args, config, engine, store, isInteractive });
+    return;
+  }
+
+  if (command === "debatir") {
+    await handleDebate({ args, config, engine, store, isInteractive });
     return;
   }
 
   if (command === "ver") {
-    await handleVer({ args, config, engine, isInteractive });
+    await handleView({ args, config, engine, isInteractive });
     return;
   }
 
   if (command === "listar") {
-    await handleListar({ engine });
+    await handleList({ engine });
     return;
   }
 
@@ -84,7 +91,7 @@ async function runMainMenu() {
     const config = await loadConfig();
     const store = new SessionStore(config.sessionsDir);
     const engine = new TribunalEngine({ config, store });
-    const cases = await engine.listarCasos();
+    const cases = await engine.listCases();
 
     const action = await select("¿Qué quieres hacer?", [
       { value: "abrir", label: "Abrir nuevo caso", detail: `${config.defaultAgents.join(", ")}`, color: 96 },
@@ -97,16 +104,19 @@ async function runMainMenu() {
     if (!action || action === "salir") return;
 
     if (action === "abrir") {
-      await handleAbrir({ args: [], config, engine, store, isInteractive: true });
+      await handleOpen({ args: [], config, engine, store, isInteractive: true });
     } else if (action === "ver") {
-      const session = await handleVer({ args: [], config, engine, isInteractive: true });
+      const session = await handleView({ args: [], config, engine, isInteractive: true });
       if (session) {
         const next = await select(`Caso ${session.id}`, [
           { value: "cuestionar", label: "Añadir cuestionamiento", detail: "despierta la sesión con tu objeción", color: 95 },
+          { value: "debatir", label: "Redebatir última ronda", detail: "los agentes se replican entre sí", color: 93 },
           { value: "volver", label: "Volver al menú", color: 90 },
         ]);
         if (next === "cuestionar") {
-          await handleCuestionar({ args: [session.id], config, engine, store, isInteractive: true });
+          await handleChallenge({ args: [session.id], config, engine, store, isInteractive: true });
+        } else if (next === "debatir") {
+          await handleDebate({ args: [session.id], config, engine, store, isInteractive: true });
         }
       }
     } else if (action === "agentes") {
@@ -119,8 +129,8 @@ async function runMainMenu() {
   }
 }
 
-async function handleAbrir({ args, config, engine, store, isInteractive }) {
-  let [topic, context = "", agentsCsv, debateRounds = "1", workspaceDir = ""] = args;
+async function handleOpen({ args, config, engine, store, isInteractive }) {
+  let [topic, context = "", agentsCsv, debateRounds = "1", workspaceDir = "", timeoutSec = ""] = args;
   let agents = parseAgentNames(agentsCsv);
 
   if (!args.length && isInteractive) {
@@ -139,30 +149,53 @@ async function handleAbrir({ args, config, engine, store, isInteractive }) {
     debateRounds = await askLine("Rondas de debate [1]:");
     if (debateRounds === undefined) return;
     debateRounds ||= "1";
+    const defaultSec = workspaceDir ? "300" : "90";
+    timeoutSec = await askLine(`Timeout por agente en segundos [${defaultSec}]:`);
+    if (timeoutSec === undefined) return;
   }
 
   if (!topic) {
     throw new Error('Debes indicar un tema. Ej: pnpm start abrir "¿SQLite o Postgres?"');
   }
 
+  const parsedTimeoutMs = timeoutSec
+    ? (/^\d+$/.test(timeoutSec) ? Number(timeoutSec) * 1000 : NaN)
+    : undefined;
+
   const chosen = agents.length ? agents : config.defaultAgents;
-  const sub = [context, workspaceDir ? `Proyecto: ${workspaceDir}` : "", `Magistrados: ${chosen.join(", ")}`]
+  const sub = [
+    context,
+    workspaceDir ? `Proyecto: ${workspaceDir}` : "",
+    parsedTimeoutMs ? `Timeout: ${Math.round(parsedTimeoutMs / 1000)}s` : "",
+    `Magistrados: ${chosen.join(", ")}`,
+  ]
     .filter(Boolean)
     .join(" · ");
   console.log(`\n${banner(`⚖️  TRIBUNAL · ${topic}`, sub)}\n`);
 
-  const session = await engine.abrirCaso({
-    topic,
-    context,
-    workspaceDir,
-    agents,
-    debateRounds: /^\d+$/.test(debateRounds) ? Number(debateRounds) : NaN,
-    onRound: (round) => printRound(round, config.agents),
-  });
-  printSavedSession(session, store);
+  const progress = createRoundProgress(config.agents);
+  try {
+    const session = await engine.openCase({
+      topic,
+      context,
+      workspaceDir,
+      agents,
+      debateRounds: /^\d+$/.test(debateRounds) ? Number(debateRounds) : NaN,
+      ...(parsedTimeoutMs !== undefined ? { timeoutMs: parsedTimeoutMs } : {}),
+      onAgentStart: (ev) => progress.start(ev),
+      onAgentDone: (ev) => progress.done(ev),
+      onRound: (round) => {
+        progress.stop();
+        printRound(round, config.agents);
+      },
+    });
+    printSavedSession(session, store);
+  } finally {
+    progress.stop();
+  }
 }
 
-async function handleCuestionar({ args, config, engine, store, isInteractive }) {
+async function handleChallenge({ args, config, engine, store, isInteractive }) {
   let [sessionId, objection, agentsCsv] = args;
   let targetAgents = parseAgentNames(agentsCsv);
 
@@ -174,7 +207,7 @@ async function handleCuestionar({ args, config, engine, store, isInteractive }) 
   if (sessionId && !objection && isInteractive) {
     objection = await askLine("Tu objeción o pregunta como juez (Enter para volver):");
     if (!objection) return;
-    const session = await engine.inspeccionarCaso(sessionId);
+    const session = await engine.inspectCase(sessionId);
     const sessionAgents = Object.fromEntries(
       session.agents.map((name) => [name, config.agents[name] || { type: "agente" }])
     );
@@ -191,16 +224,70 @@ async function handleCuestionar({ args, config, engine, store, isInteractive }) 
   }
 
   console.log(`\n${divider(`Reabriendo ${sessionId}`, 95)}\n`);
-  const session = await engine.cuestionarCaso({
-    sessionId,
-    objection,
-    targetAgents,
-    onRound: (round) => printRound(round, config.agents),
-  });
-  printSavedSession(session, store);
+  const progress = createRoundProgress(config.agents);
+  try {
+    const session = await engine.challengeCase({
+      sessionId,
+      objection,
+      targetAgents,
+      onAgentStart: (ev) => progress.start(ev),
+      onAgentDone: (ev) => progress.done(ev),
+      onRound: (round) => {
+        progress.stop();
+        printRound(round, config.agents);
+      },
+    });
+    printSavedSession(session, store);
+  } finally {
+    progress.stop();
+  }
 }
 
-async function handleVer({ args, config, engine, isInteractive }) {
+async function handleDebate({ args, config, engine, store, isInteractive }) {
+  let [sessionId, agentsCsv] = args;
+  let targetAgents = parseAgentNames(agentsCsv);
+
+  if (!sessionId && isInteractive) {
+    sessionId = await pickSession(engine, "Elige el caso a redebatir");
+    if (!sessionId) return;
+  }
+  if (!sessionId) {
+    throw new Error("Uso: pnpm start debatir <sessionId> [agente1,agente2]");
+  }
+
+  if (!agentsCsv && isInteractive) {
+    const session = await engine.inspectCase(sessionId);
+    const sessionAgents = Object.fromEntries(
+      session.agents.map((name) => [name, config.agents[name] || { type: "agente" }])
+    );
+    targetAgents = await select(
+      "¿Qué agentes participan en la réplica?",
+      agentOptions(sessionAgents, session.agents),
+      { selected: session.agents, multiple: true }
+    );
+    if (!targetAgents) return;
+  }
+
+  console.log(`\n${divider(`Réplica en ${sessionId}`, TRIBUNAL_GOLD)}\n`);
+  const progress = createRoundProgress(config.agents);
+  try {
+    const session = await engine.debateCase({
+      sessionId,
+      targetAgents,
+      onAgentStart: (ev) => progress.start(ev),
+      onAgentDone: (ev) => progress.done(ev),
+      onRound: (round) => {
+        progress.stop();
+        printRound(round, config.agents);
+      },
+    });
+    printSavedSession(session, store);
+  } finally {
+    progress.stop();
+  }
+}
+
+async function handleView({ args, config, engine, isInteractive }) {
   let [sessionId] = args;
   if (!sessionId && isInteractive) {
     sessionId = await pickSession(engine, "Elige un caso guardado");
@@ -210,7 +297,7 @@ async function handleVer({ args, config, engine, isInteractive }) {
     throw new Error("Uso: pnpm start ver <sessionId>");
   }
 
-  const session = await engine.inspeccionarCaso(sessionId);
+  const session = await engine.inspectCase(sessionId);
   console.log(
     `\n${banner(`Caso ${session.id} · ${session.status}`, session.topic)}`
   );
@@ -222,8 +309,8 @@ async function handleVer({ args, config, engine, isInteractive }) {
   return session;
 }
 
-async function handleListar({ engine }) {
-  const cases = await engine.listarCasos();
+async function handleList({ engine }) {
+  const cases = await engine.listCases();
   if (!cases.length) {
     console.log(colorize("\nNo hay sesiones guardadas todavía.\n", 90));
     return;
@@ -239,7 +326,7 @@ async function handleListar({ engine }) {
 }
 
 async function pickSession(engine, title) {
-  const cases = await engine.listarCasos();
+  const cases = await engine.listCases();
   if (!cases.length) {
     console.log(colorize("\nNo hay sesiones guardadas todavía.\n", 90));
     return undefined;
@@ -268,9 +355,14 @@ function printSavedSession(session, store) {
 
 function printRound(round, agents) {
   const roundColor = ROUND_COLORS[round.type] || 96;
+  const contentWidth = Math.min(82, Math.max(44, (process.stdout.columns || 90) - 8));
+
   console.log(`\n${divider(`Ronda ${round.number} · ${round.type.toUpperCase()}`, roundColor)}`);
   if (round.userObjection) {
-    console.log(`\n  ${colorize("Objeción del juez:", "1;95")} ${round.userObjection}`);
+    console.log(`\n  ${colorize("Objeción del juez:", "1;95")}`);
+    for (const line of renderRichLines(round.userObjection, { width: contentWidth })) {
+      console.log(`    ${line}`);
+    }
   }
   for (const entry of round.entries) {
     const color = agentColor(agents, entry.agent);
@@ -278,21 +370,30 @@ function printRound(round, agents) {
     const badge = type ? `${colorize(`[${type}]`, color)} ` : "";
     const name = colorize(entry.agent, `1;${color}`);
     const role = entry.role ? colorize(` · ${entry.role}`, 90) : "";
+    const duration = entry.durationMs ? colorize(` · ${(entry.durationMs / 1000).toFixed(1)}s`, 90) : "";
     const bar = colorize("│", color);
 
-    console.log(`\n  ${colorize("╭─", color)} ${badge}${name}${role}`);
+    console.log(`\n  ${colorize("╭─", color)} ${badge}${name}${role}${duration}`);
     if (entry.error) {
-      console.log(`  ${colorize("│", 91)} ${colorize("Error:", "1;91")} ${entry.error}`);
-    } else {
-      console.log(`  ${bar} ${colorize("Resumen:", `1;${TRIBUNAL_GOLD}`)} ${entry.resumen}`);
-      console.log(`  ${bar} ${colorize("Disidencias:", "1;93")} ${entry.disidencias}`);
-      const reasoningLines = String(entry.razonamiento || "").split("\n");
-      console.log(`  ${bar} ${colorize("Argumentos:", "1;90")} ${reasoningLines[0]}`);
-      for (const extra of reasoningLines.slice(1)) {
-        console.log(`  ${bar}   ${extra}`);
+      console.log(`  ${colorize("│", 91)} ${colorize("Error:", "1;91")}`);
+      for (const line of renderRichLines(entry.error, { width: contentWidth })) {
+        console.log(`  ${colorize("│", 91)}   ${line}`);
       }
+    } else {
+      const printSection = (title, titleStyle, text) => {
+        console.log(`  ${bar} ${colorize(title, titleStyle)}`);
+        for (const line of renderRichLines(text, { width: contentWidth })) {
+          console.log(`  ${bar}   ${line}`);
+        }
+      };
+
+      printSection("RESUMEN", `1;${TRIBUNAL_GOLD}`, entry.summary ?? entry.resumen ?? "");
+      console.log(`  ${bar}`);
+      printSection("DISIDENCIAS", "1;93", entry.dissents ?? entry.disidencias ?? "");
+      console.log(`  ${bar}`);
+      printSection("ARGUMENTOS", "1;96", entry.reasoning ?? entry.razonamiento ?? "");
     }
-    console.log(`  ${colorize("╰──────────────────────────────", color)}`);
+    console.log(`  ${colorize("╰" + "─".repeat(Math.min(48, contentWidth)), color)}`);
   }
 }
 
@@ -305,12 +406,13 @@ ${colorize("Modo sencillo (menú interactivo):", "1;96")}
 
 ${colorize("Comandos directos:", "1;93")}
   pnpm start abrir         ${colorize("(asistente interactivo)", 90)}
-  pnpm start abrir "<tema>" "[contexto]" "[agente1,agente2]" [rondas]
+  pnpm start abrir "<tema>" "[contexto]" "[agente1,agente2]" [rondas] [rutaCodigo] [timeoutSeg]
   pnpm start listar        ${colorize("(sesiones guardadas)", 90)}
   pnpm start ver [id]      ${colorize("(inspecciona sin gastar tokens)", 90)}
   pnpm start cuestionar [id] "<objeción>" "[agentes]"
-  pnpm start agentes       ${colorize("(lista perfiles con sus colores y modelos)", 90)}
-  pnpm start configurar    ${colorize("(cambiar modelo, clonar, predeterminados o eliminar)", 90)}
+  pnpm start debatir [id]  ${colorize("(lanza una ronda de réplica entre agentes)", 90)}
+  pnpm start agentes       ${colorize("(lista perfiles con sus colores, modelos y timeout)", 90)}
+  pnpm start configurar    ${colorize("(cambiar modelo, clonar, predeterminados, eliminar o timeout)", 90)}
 `);
 }
 
