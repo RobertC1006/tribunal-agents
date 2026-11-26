@@ -40,6 +40,30 @@ async function resolveWorkspaceDir(workspaceDir) {
   return resolved;
 }
 
+async function resolveImagePaths(images = []) {
+  if (!Array.isArray(images) || images.length === 0) return [];
+  const resolved = [];
+  for (const rawPath of images) {
+    if (typeof rawPath !== "string" || !rawPath.trim()) continue;
+    const fullPath = path.resolve(rawPath.trim());
+    let info;
+    try {
+      info = await stat(fullPath);
+    } catch {
+      const error = new Error(`La imagen adjunta no existe: "${fullPath}".`);
+      error.statusCode = 400;
+      throw error;
+    }
+    if (!info.isFile()) {
+      const error = new Error(`La ruta de imagen no es un archivo válido: "${fullPath}".`);
+      error.statusCode = 400;
+      throw error;
+    }
+    resolved.push(fullPath);
+  }
+  return resolved;
+}
+
 /**
  * Motor central del Tribunal.
  * Es completamente independiente de la interfaz (puede llamarse desde CLI,
@@ -79,8 +103,8 @@ export class TribunalEngine {
    * Al terminar, la sesión queda en estado "dormida" en disco (0 procesos activos).
    */
   async openCase({
-    topic, context = "", workspaceDir = "", agents, includeDebateRound = true,
-    debateRounds = includeDebateRound ? 1 : 0, timeoutMs, onRound, onAgentStart, onAgentDone,
+    topic, context = "", workspaceDir = "", images = [], agents, includeDebateRound = true,
+    debateRounds = includeDebateRound ? 1 : 0, timeoutMs, signal, onRound, onAgentStart, onAgentDone,
   }) {
     if (!Number.isSafeInteger(debateRounds) || debateRounds < 0 || debateRounds > MAX_DEBATE_ROUNDS) {
       const error = new Error(
@@ -92,6 +116,7 @@ export class TribunalEngine {
 
     const validatedTimeout = validateTimeoutMs(timeoutMs);
     const resolvedWorkspace = await resolveWorkspaceDir(workspaceDir);
+    const resolvedImages = await resolveImagePaths(images);
 
     const selectedAgents =
       Array.isArray(agents) && agents.length > 0
@@ -106,6 +131,7 @@ export class TribunalEngine {
       topic,
       context,
       ...(resolvedWorkspace ? { workspaceDir: resolvedWorkspace } : {}),
+      ...(resolvedImages.length ? { images: resolvedImages } : {}),
       ...(validatedTimeout ? { timeoutMs: validatedTimeout } : {}),
       status: "activa",
       agents: selectedAgents,
@@ -118,6 +144,8 @@ export class TribunalEngine {
       await this.runRound(session, {
         roundType: "apertura",
         targetAgents: selectedAgents,
+        images: resolvedImages,
+        signal,
         onRound,
         onAgentStart,
         onAgentDone,
@@ -127,6 +155,8 @@ export class TribunalEngine {
         await this.runRound(session, {
           roundType: "debate",
           targetAgents: selectedAgents,
+          images: resolvedImages,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -149,8 +179,9 @@ export class TribunalEngine {
    * Despierta temporalmente una sesión dormida, inyecta la objeción del usuario,
    * recoge las nuevas respuestas y vuelve a guardarla como "dormida".
    */
-  async challengeCase({ sessionId, objection, targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+  async challengeCase({ sessionId, objection, images = [], targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
+    const resolvedImages = await resolveImagePaths(images);
     return this.withSessionLock(sessionId, async () => {
       const session = await this.store.load(sessionId);
       const agentsToAsk =
@@ -165,7 +196,9 @@ export class TribunalEngine {
           roundType: "cuestionamiento",
           targetAgents: agentsToAsk,
           userObjection: objection,
+          images: resolvedImages,
           timeoutMs: validatedTimeout,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -185,7 +218,7 @@ export class TribunalEngine {
    * Despierta una sesión dormida para que los magistrados debatan entre sí
    * sobre la última ronda (apertura o cuestionamiento previo).
    */
-  async debateCase({ sessionId, targetAgents, timeoutMs, onRound, onAgentStart, onAgentDone }) {
+  async debateCase({ sessionId, targetAgents, timeoutMs, signal, onRound, onAgentStart, onAgentDone }) {
     const validatedTimeout = validateTimeoutMs(timeoutMs);
     return this.withSessionLock(sessionId, async () => {
       const session = await this.store.load(sessionId);
@@ -201,6 +234,7 @@ export class TribunalEngine {
           roundType: "debate",
           targetAgents: agentsToAsk,
           timeoutMs: validatedTimeout,
+          signal,
           onRound,
           onAgentStart,
           onAgentDone,
@@ -229,12 +263,13 @@ export class TribunalEngine {
 
   async runRound(
     session,
-    { roundType, targetAgents, userObjection = "", timeoutMs: roundTimeoutMs, onRound, onAgentStart, onAgentDone },
+    { roundType, targetAgents, userObjection = "", images = [], timeoutMs: roundTimeoutMs, signal, onRound, onAgentStart, onAgentDone },
   ) {
     const agents = targetAgents.map((name) =>
       createAgent(name, this.config.agents[name])
     );
     const roundNumber = session.rounds.length + 1;
+    const roundImages = [...new Set([...(session.images || []), ...(images || [])])];
 
     const entries = await Promise.all(
       agents.map(async (agent) => {
@@ -243,6 +278,7 @@ export class TribunalEngine {
           agent,
           roundType,
           objection: userObjection,
+          images: roundImages,
         });
 
         const startedAt = Date.now();
@@ -263,6 +299,9 @@ export class TribunalEngine {
             topic: session.topic,
             cwd: session.workspaceDir,
             timeoutMs,
+            images: roundImages,
+            readOnly: Boolean(session.workspaceDir),
+            signal,
           });
           const durationMs = Date.now() - startedAt;
           onAgentDone?.({ agent: agent.name, roundNumber, roundType, durationMs, ok: true });
@@ -300,6 +339,7 @@ export class TribunalEngine {
       number: roundNumber,
       type: roundType,
       userObjection: userObjection || undefined,
+      images: images.length ? images : undefined,
       entries,
     };
     session.rounds.push(round);

@@ -1,0 +1,1402 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Agent Tribunal</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        --bg: #12100f;
+        --bg-sidebar: #161311;
+        --bg-surface: rgba(28, 24, 21, 0.78);
+        --bg-surface-solid: #1c1815;
+        --bg-hover: #25201c;
+        --border: rgba(235, 224, 210, 0.08);
+        --border-strong: rgba(235, 224, 210, 0.15);
+        --text: #ece7df;
+        --text-soft: #c7bfb4;
+        --text-muted: #8a8177;
+        --brass: #b79a6b;
+        --error: #c7776b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        overflow: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .layout {
+        display: flex;
+        height: 100vh;
+        width: 100vw;
+      }
+
+      /* Collapsible minimal sidebar */
+      .sidebar {
+        width: 264px;
+        background: var(--bg-sidebar);
+        border-right: 1px solid var(--border);
+        display: flex;
+        flex-direction: column;
+        transition: width 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+        overflow: hidden;
+        flex-shrink: 0;
+      }
+
+      .sidebar.collapsed {
+        width: 0;
+        border-right-color: transparent;
+        opacity: 0;
+      }
+
+      .sidebar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 14px 12px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        text-decoration: none;
+        color: var(--text);
+        cursor: pointer;
+      }
+
+      .brand img {
+        width: 26px;
+        height: 26px;
+      }
+
+      .brand span {
+        font-size: 13.5px;
+        font-weight: 600;
+        letter-spacing: 0.1px;
+        white-space: nowrap;
+      }
+
+      .sidebar-controls {
+        padding: 0 12px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .new-chat-btn {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        background: rgba(236, 231, 223, 0.06);
+        border: 1px solid var(--border-strong);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+
+      .new-chat-btn:hover {
+        background: rgba(236, 231, 223, 0.11);
+        border-color: rgba(183, 154, 107, 0.45);
+      }
+
+      .search-input {
+        width: 100%;
+        background: rgba(0, 0, 0, 0.22);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 7px 10px;
+        color: var(--text);
+        font-size: 12.5px;
+        font-family: inherit;
+        outline: none;
+      }
+
+      .search-input:focus {
+        border-color: rgba(183, 154, 107, 0.5);
+      }
+
+      .session-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 4px 8px 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .session-item {
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        border: none;
+        border-radius: 9px;
+        padding: 9px 10px;
+        color: var(--text-soft);
+        cursor: pointer;
+        transition: background 0.14s, color 0.14s;
+      }
+
+      .session-item:hover {
+        background: var(--bg-hover);
+        color: var(--text);
+      }
+
+      .session-item.active {
+        background: rgba(183, 154, 107, 0.13);
+        color: var(--text);
+      }
+
+      .session-topic {
+        font-size: 12.5px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .session-sub {
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-top: 2px;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      /* Main airy canvas */
+      .canvas {
+        position: relative;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      /* Subtle animated ambient glow (moves gently, intensifies when thinking) */
+      .ambient-glow {
+        position: absolute;
+        left: 50%;
+        bottom: -140px;
+        width: 720px;
+        height: 400px;
+        transform: translateX(-50%);
+        background: radial-gradient(
+          ellipse at center,
+          rgba(183, 154, 107, 0.18) 0%,
+          rgba(125, 93, 56, 0.1) 42%,
+          transparent 72%
+        );
+        filter: blur(42px);
+        pointer-events: none;
+        z-index: 0;
+        animation: driftGlow 11s ease-in-out infinite alternate;
+        transition: opacity 0.4s ease, transform 0.5s ease;
+      }
+
+      .canvas.thinking .ambient-glow {
+        opacity: 1;
+        animation: pulseGlow 2.4s ease-in-out infinite alternate;
+      }
+
+      @keyframes driftGlow {
+        0% {
+          transform: translateX(-54%) scale(0.96);
+          opacity: 0.6;
+        }
+        100% {
+          transform: translateX(-46%) scale(1.06);
+          opacity: 0.85;
+        }
+      }
+
+      @keyframes pulseGlow {
+        0% {
+          transform: translateX(-50%) scale(0.95);
+          opacity: 0.7;
+        }
+        100% {
+          transform: translateX(-50%) scale(1.16);
+          opacity: 1;
+        }
+      }
+
+      /* Minimal floating top bar */
+      .topbar {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 18px;
+        min-height: 52px;
+      }
+
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .icon-btn {
+        background: transparent;
+        border: 1px solid transparent;
+        color: var(--text-muted);
+        border-radius: 8px;
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 15px;
+        transition: background 0.15s, color 0.15s, border-color 0.15s;
+      }
+
+      .icon-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text);
+        border-color: var(--border);
+      }
+
+      .topbar-title {
+        font-size: 13.5px;
+        font-weight: 500;
+        color: var(--text-soft);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .topbar-meta {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      /* Scrollable center column */
+      .scroll-area {
+        position: relative;
+        z-index: 1;
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 20px 28px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .center-col {
+        width: 100%;
+        max-width: 780px;
+        margin: 0 auto;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Welcome / New Case hero (like reference) */
+      .welcome {
+        margin: auto 0;
+        padding: 24px 0 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      .welcome-logo {
+        width: 68px;
+        height: 68px;
+        margin-bottom: 16px;
+        animation: floatSlow 5s ease-in-out infinite;
+      }
+
+      @keyframes floatSlow {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
+
+      .welcome h1 {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 500;
+        letter-spacing: -0.2px;
+        color: var(--text);
+      }
+
+      .welcome p {
+        margin: 8px 0 0;
+        font-size: 13.5px;
+        color: var(--text-muted);
+      }
+
+      /* Suggestion chips right above composer */
+      .suggestions-wrap {
+        width: 100%;
+        max-width: 780px;
+        margin: 0 auto 10px;
+        position: relative;
+        z-index: 2;
+        padding: 0 20px;
+      }
+
+      .suggestions-label {
+        font-size: 11.5px;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+      }
+
+      .suggestions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 8px;
+      }
+
+      .suggestion-chip {
+        text-align: left;
+        background: var(--bg-surface);
+        backdrop-filter: blur(10px);
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        padding: 10px 13px;
+        color: var(--text-soft);
+        font-size: 12.5px;
+        cursor: pointer;
+        transition: border-color 0.18s, background 0.18s, transform 0.18s;
+      }
+
+      .suggestion-chip:hover {
+        background: var(--bg-hover);
+        border-color: rgba(183, 154, 107, 0.4);
+        color: var(--text);
+        transform: translateY(-1px);
+      }
+
+      /* Thread messages */
+      .thread {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        padding: 10px 0 20px;
+      }
+
+      @keyframes riseIn {
+        from {
+          opacity: 0;
+          transform: translateY(8px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .case-banner {
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        animation: riseIn 0.3s ease;
+      }
+
+      .case-banner h2 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+      }
+
+      .case-banner p {
+        margin: 6px 0 0;
+        font-size: 13px;
+        color: var(--text-muted);
+        line-height: 1.5;
+      }
+
+      .meta-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .meta-chip {
+        font-size: 11px;
+        color: var(--text-muted);
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        padding: 2px 8px;
+        border-radius: 999px;
+      }
+
+      .round-divider {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin: 4px 0;
+      }
+
+      .round-divider::before,
+      .round-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+
+      .round-divider span {
+        font-size: 11px;
+        color: var(--text-muted);
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+
+      .judge-row {
+        display: flex;
+        justify-content: flex-end;
+        animation: riseIn 0.25s ease;
+      }
+
+      .judge-bubble {
+        max-width: 80%;
+        background: #241f1a;
+        border: 1px solid rgba(183, 154, 107, 0.28);
+        border-radius: 16px 16px 4px 16px;
+        padding: 11px 15px;
+        font-size: 13.5px;
+        line-height: 1.55;
+      }
+
+      .agent-card {
+        background: var(--bg-surface);
+        backdrop-filter: blur(8px);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 15px 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        animation: riseIn 0.3s ease;
+      }
+
+      .agent-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .agent-id {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .agent-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--brass);
+        opacity: 0.85;
+      }
+
+      .agent-name {
+        font-size: 13.5px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .agent-sub {
+        font-size: 11.5px;
+        color: var(--text-muted);
+      }
+
+      .section-tag {
+        font-size: 10.5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--brass);
+        margin-bottom: 3px;
+      }
+
+      .section-tag.muted {
+        color: var(--text-muted);
+      }
+
+      .rich {
+        font-size: 13.5px;
+        line-height: 1.65;
+        color: var(--text-soft);
+        overflow-wrap: anywhere;
+      }
+
+      .rich p { margin: 0 0 8px; }
+      .rich p:last-child { margin-bottom: 0; }
+      .rich ul, .rich ol { margin: 4px 0 8px; padding-left: 20px; }
+      .rich li { margin-bottom: 4px; }
+      .rich strong { color: var(--text); font-weight: 600; }
+      .rich code {
+        background: rgba(0, 0, 0, 0.3);
+        border: 1px solid var(--border);
+        color: var(--text);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+      }
+
+      details {
+        border-top: 1px solid var(--border);
+        padding-top: 9px;
+      }
+
+      details summary {
+        cursor: pointer;
+        user-select: none;
+        list-style: none;
+        font-size: 12px;
+        color: var(--text-muted);
+      }
+
+      details summary:hover { color: var(--text); }
+      details[open] summary { margin-bottom: 8px; color: var(--text-soft); }
+
+      .error-msg {
+        color: var(--error);
+        font-size: 13px;
+        background: rgba(199, 119, 107, 0.08);
+        border: 1px solid rgba(199, 119, 107, 0.25);
+        border-radius: 9px;
+        padding: 9px 12px;
+      }
+
+      /* Live thinking indicator */
+      .thinking-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 16px;
+        border-radius: 14px;
+        background: var(--bg-surface);
+        border: 1px solid rgba(183, 154, 107, 0.25);
+        font-size: 13px;
+        color: var(--text-soft);
+        animation: riseIn 0.25s ease;
+      }
+
+      .dots {
+        display: inline-flex;
+        gap: 4px;
+      }
+
+      .dots i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--brass);
+        animation: bounceDot 1.2s ease-in-out infinite;
+      }
+
+      .dots i:nth-child(2) { animation-delay: 0.16s; }
+      .dots i:nth-child(3) { animation-delay: 0.32s; }
+
+      @keyframes bounceDot {
+        0%, 80%, 100% { transform: scale(0.65); opacity: 0.4; }
+        40% { transform: scale(1.1); opacity: 1; }
+      }
+
+      /* Images */
+      .img-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .img-thumb {
+        width: 82px;
+        height: 60px;
+        object-fit: cover;
+        border-radius: 8px;
+        border: 1px solid var(--border-strong);
+      }
+
+      /* Bottom floating composer */
+      .composer-dock {
+        position: relative;
+        z-index: 3;
+        width: 100%;
+        max-width: 780px;
+        margin: 0 auto 18px;
+        padding: 0 20px;
+      }
+
+      .options-drawer {
+        display: none;
+        margin-bottom: 8px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: var(--bg-surface-solid);
+        border: 1px solid var(--border-strong);
+        flex-direction: column;
+        gap: 10px;
+        animation: riseIn 0.18s ease;
+      }
+
+      .options-drawer.open {
+        display: flex;
+      }
+
+      .opt-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .opt-field label {
+        display: block;
+        font-size: 11px;
+        color: var(--text-muted);
+        margin-bottom: 4px;
+      }
+
+      .opt-field input {
+        width: 100%;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 6px 9px;
+        color: var(--text);
+        font-size: 12.5px;
+        outline: none;
+      }
+
+      .agent-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .agent-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 9px;
+        border-radius: 999px;
+        border: 1px solid var(--border-strong);
+        background: var(--bg);
+        font-size: 11.5px;
+        color: var(--text-soft);
+        cursor: pointer;
+      }
+
+      .composer-box {
+        background: rgba(26, 22, 19, 0.9);
+        backdrop-filter: blur(14px);
+        border: 1px solid var(--border-strong);
+        border-radius: 16px;
+        padding: 8px 10px;
+        transition: border-color 0.2s, box-shadow 0.2s;
+      }
+
+      .composer-box:focus-within {
+        border-color: rgba(183, 154, 107, 0.55);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      .pending-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 2px 4px 8px;
+      }
+
+      .pending-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 3px 6px 3px 4px;
+        font-size: 11px;
+        color: var(--text-soft);
+      }
+
+      .pending-chip img {
+        width: 22px;
+        height: 22px;
+        object-fit: cover;
+        border-radius: 4px;
+      }
+
+      .pending-chip button {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0 2px;
+      }
+
+      .composer-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .composer-input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font-size: 14px;
+        font-family: inherit;
+        padding: 6px 6px;
+        outline: none;
+      }
+
+      .composer-input::placeholder {
+        color: var(--text-muted);
+      }
+
+      .subtle-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-soft);
+        border-radius: 9px;
+        padding: 6px 10px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+      }
+
+      .subtle-btn:hover:not(:disabled) {
+        background: var(--bg-hover);
+        color: var(--text);
+      }
+
+      .send-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        border: none;
+        background: #e5dfd6;
+        color: #151210;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: transform 0.14s, background 0.14s;
+        flex-shrink: 0;
+      }
+
+      .send-btn:hover:not(:disabled) {
+        background: #f3eee6;
+        transform: translateY(-1px);
+      }
+
+      .send-btn:disabled,
+      .subtle-btn:disabled {
+        opacity: 0.4;
+        cursor: wait;
+      }
+
+      @media (max-width: 720px) {
+        .sidebar {
+          position: fixed;
+          z-index: 20;
+          height: 100vh;
+          box-shadow: 12px 0 32px rgba(0, 0, 0, 0.5);
+        }
+        .opt-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <!-- Left sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-head">
+          <div id="brandHome" class="brand">
+            <img src="/logo.svg" alt="Agent Tribunal" />
+            <span>Agent Tribunal</span>
+          </div>
+          <button id="refreshBtn" class="icon-btn" title="Recargar sesiones">↻</button>
+        </div>
+        <div class="sidebar-controls">
+          <button id="newCaseBtn" class="new-chat-btn">+ Nuevo debate</button>
+          <input id="searchInput" class="search-input" type="text" placeholder="Buscar..." />
+        </div>
+        <div id="sessionList" class="session-list"></div>
+      </aside>
+
+      <!-- Main canvas -->
+      <main id="canvas" class="canvas">
+        <div class="ambient-glow"></div>
+
+        <header class="topbar">
+          <div class="topbar-left">
+            <button id="toggleSidebarBtn" class="icon-btn" title="Mostrar u ocultar panel">☰</button>
+            <span id="topbarTitle" class="topbar-title">Nuevo debate</span>
+          </div>
+          <div id="topbarMeta" class="topbar-meta"></div>
+        </header>
+
+        <div id="scrollArea" class="scroll-area">
+          <div id="centerCol" class="center-col"></div>
+        </div>
+
+        <div id="suggestionsWrap" class="suggestions-wrap">
+          <div class="suggestions-label">Sugerencias para consultar al Tribunal</div>
+          <div class="suggestions">
+            <button class="suggestion-chip" data-prompt="¿Qué arquitectura conviene más para escalar este proyecto sin sobre-diseñar?">
+              Auditar arquitectura sin sobre-diseñar
+            </button>
+            <button class="suggestion-chip" data-prompt="Compara dos opciones técnicas y señala puntos ciegos antes de implementar.">
+              Comparar dos opciones técnicas
+            </button>
+            <button class="suggestion-chip" data-prompt="Revisa esta captura de interfaz y propón mejoras concretas de usabilidad.">
+              Evaluar una captura de diseño
+            </button>
+          </div>
+        </div>
+
+        <div class="composer-dock">
+          <div id="optionsDrawer" class="options-drawer">
+            <div class="opt-grid">
+              <div class="opt-field">
+                <label for="contextInput">Contexto adicional</label>
+                <input id="contextInput" type="text" placeholder="Restricciones, entorno..." />
+              </div>
+              <div class="opt-field">
+                <label for="workspaceInput">Carpeta de código (opcional)</label>
+                <input id="workspaceInput" type="text" placeholder="/ruta/a/tu/proyecto" />
+              </div>
+              <div class="opt-field">
+                <label for="roundsInput">Rondas de debate (0-5)</label>
+                <input id="roundsInput" type="number" min="0" max="5" value="1" />
+              </div>
+              <div class="opt-field">
+                <label for="timeoutInput">Timeout en segundos</label>
+                <input id="timeoutInput" type="number" min="1" max="3600" placeholder="180" />
+              </div>
+            </div>
+            <div class="opt-field">
+              <label>Magistrados</label>
+              <div id="agentPills" class="agent-pills"></div>
+            </div>
+          </div>
+
+          <form id="composerForm" class="composer-box">
+            <div id="pendingStrip" class="pending-strip" style="display: none"></div>
+            <div class="composer-row">
+              <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+              <button id="attachBtn" type="button" class="icon-btn" title="Adjuntar imagen (o pega con Ctrl+V)">📎</button>
+              <button id="optionsBtn" type="button" class="icon-btn" title="Opciones del debate">⚙</button>
+              <input
+                id="mainInput"
+                class="composer-input"
+                type="text"
+                placeholder="Plantea un tema al Tribunal o pega una captura (Ctrl+V)..."
+                autocomplete="off"
+              />
+              <button id="debateBtn" type="button" class="subtle-btn" style="display: none">Redebatir</button>
+              <button id="sendBtn" type="submit" class="send-btn" title="Enviar">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M22 2L11 13" />
+                  <path d="M22 2L15 22L11 13L2 9L22 2Z" />
+                </svg>
+              </button>
+            </div>
+          </form>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const state = {
+        cases: [],
+        agents: [],
+        agentMap: {},
+        selectedId: null,
+        selectedSession: null,
+        uploads: [],
+        busy: false,
+        thinkingTimer: null,
+      };
+
+      const els = {
+        sidebar: document.getElementById("sidebar"),
+        canvas: document.getElementById("canvas"),
+        brandHome: document.getElementById("brandHome"),
+        toggleSidebarBtn: document.getElementById("toggleSidebarBtn"),
+        refreshBtn: document.getElementById("refreshBtn"),
+        newCaseBtn: document.getElementById("newCaseBtn"),
+        searchInput: document.getElementById("searchInput"),
+        sessionList: document.getElementById("sessionList"),
+        topbarTitle: document.getElementById("topbarTitle"),
+        topbarMeta: document.getElementById("topbarMeta"),
+        scrollArea: document.getElementById("scrollArea"),
+        centerCol: document.getElementById("centerCol"),
+        suggestionsWrap: document.getElementById("suggestionsWrap"),
+        optionsDrawer: document.getElementById("optionsDrawer"),
+        optionsBtn: document.getElementById("optionsBtn"),
+        agentPills: document.getElementById("agentPills"),
+        pendingStrip: document.getElementById("pendingStrip"),
+        fileInput: document.getElementById("fileInput"),
+        attachBtn: document.getElementById("attachBtn"),
+        composerForm: document.getElementById("composerForm"),
+        mainInput: document.getElementById("mainInput"),
+        debateBtn: document.getElementById("debateBtn"),
+        sendBtn: document.getElementById("sendBtn"),
+      };
+
+      function escapeHtml(str) {
+        return String(str || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function renderInline(escaped) {
+        return escaped
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/__([^_]+)__/g, "<strong>$1</strong>");
+      }
+
+      function renderMarkdown(raw) {
+        const lines = String(raw || "").replace(/\r\n/g, "\n").trim().split("\n");
+        let html = "";
+        let inUl = false;
+        let inOl = false;
+        const closeLists = () => {
+          if (inUl) { html += "</ul>"; inUl = false; }
+          if (inOl) { html += "</ol>"; inOl = false; }
+        };
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) { closeLists(); continue; }
+          const ul = line.match(/^[-*+]\s+(.*)$/);
+          if (ul) {
+            if (inOl) { html += "</ol>"; inOl = false; }
+            if (!inUl) { html += "<ul>"; inUl = true; }
+            html += `<li>${renderInline(escapeHtml(ul[1]))}</li>`;
+            continue;
+          }
+          const ol = line.match(/^\d+[.)]\s+(.*)$/);
+          if (ol) {
+            if (inUl) { html += "</ul>"; inUl = false; }
+            if (!inOl) { html += "<ol>"; inOl = true; }
+            html += `<li>${renderInline(escapeHtml(ol[1]))}</li>`;
+            continue;
+          }
+          closeLists();
+          const h = line.match(/^#{1,6}\s+(.*)$/);
+          html += h
+            ? `<p><strong>${renderInline(escapeHtml(h[1]))}</strong></p>`
+            : `<p>${renderInline(escapeHtml(line))}</p>`;
+        }
+        closeLists();
+        return html || "<p><em>Sin contenido</em></p>";
+      }
+
+      function imageSrcFromPath(imgPath) {
+        const parts = String(imgPath || "").split(/[\\/]/);
+        const fileName = parts[parts.length - 1];
+        if (parts[parts.length - 2] === "attachments" && fileName) {
+          return `/api/casos/attachments/${encodeURIComponent(fileName)}`;
+        }
+        return null;
+      }
+
+      function renderImageStrip(images = []) {
+        if (!images || !images.length) return "";
+        const items = images
+          .map((p) => {
+            const src = imageSrcFromPath(p);
+            const name = String(p).split(/[\\/]/).pop();
+            return src
+              ? `<a href="${src}" target="_blank" rel="noreferrer"><img class="img-thumb" src="${src}" alt="${escapeHtml(name)}" /></a>`
+              : `<span class="meta-chip">🖼 ${escapeHtml(name)}</span>`;
+          })
+          .join("");
+        return `<div class="img-strip">${items}</div>`;
+      }
+
+      function fileToDataUrl(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve({ name: file.name || "captura.png", dataUrl: reader.result });
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function renderPendingUploads() {
+        if (!state.uploads.length) {
+          els.pendingStrip.style.display = "none";
+          els.pendingStrip.innerHTML = "";
+          return;
+        }
+        els.pendingStrip.style.display = "flex";
+        els.pendingStrip.innerHTML = state.uploads
+          .map(
+            (u, idx) => `
+            <span class="pending-chip">
+              <img src="${u.dataUrl}" alt="${escapeHtml(u.name)}" />
+              <span>${escapeHtml(u.name)}</span>
+              <button type="button" data-idx="${idx}">✕</button>
+            </span>
+          `
+          )
+          .join("");
+        els.pendingStrip.querySelectorAll("button").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            state.uploads.splice(Number(btn.dataset.idx), 1);
+            renderPendingUploads();
+          });
+        });
+      }
+
+      async function addFiles(files) {
+        const valid = [...files].filter((f) => /^image\/(png|jpeg|webp|gif)$/.test(f.type));
+        for (const f of valid) state.uploads.push(await fileToDataUrl(f));
+        renderPendingUploads();
+      }
+
+      async function api(url, options) {
+        const res = await fetch(url, options);
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        return data.data;
+      }
+
+      function renderSessionList() {
+        const q = els.searchInput.value.trim().toLowerCase();
+        const list = state.cases.filter(
+          (c) => !q || c.topic.toLowerCase().includes(q) || c.id.toLowerCase().includes(q)
+        );
+        els.sessionList.innerHTML = list.length
+          ? list
+              .map(
+                (c) => `
+                <button class="session-item ${c.id === state.selectedId ? "active" : ""}" data-id="${escapeHtml(c.id)}">
+                  <div class="session-topic">${escapeHtml(c.topic)}</div>
+                  <div class="session-sub"><span>${escapeHtml(c.id.slice(-6))}</span><span>${c.roundsCount}r</span></div>
+                </button>
+              `
+              )
+              .join("")
+          : `<div style="padding:12px;color:var(--text-muted);font-size:12px">Sin sesiones</div>`;
+
+        els.sessionList.querySelectorAll(".session-item").forEach((btn) => {
+          btn.addEventListener("click", () => selectSession(btn.dataset.id));
+        });
+      }
+
+      function showWelcome() {
+        state.selectedId = null;
+        state.selectedSession = null;
+        els.topbarTitle.textContent = "Nuevo debate";
+        els.topbarMeta.textContent = "";
+        els.suggestionsWrap.style.display = "block";
+        els.debateBtn.style.display = "none";
+        els.mainInput.placeholder = "Plantea un tema al Tribunal o pega una captura (Ctrl+V)...";
+        renderSessionList();
+        els.centerCol.innerHTML = `
+          <div class="welcome">
+            <img class="welcome-logo" src="/logo.svg" alt="Agent Tribunal" />
+            <h1>¿Qué quieres someter al Tribunal?</h1>
+            <p>Convoca varios agentes en apertura ciega, compara posturas y cuestiona como juez.</p>
+          </div>
+        `;
+      }
+
+      function renderSession(session) {
+        els.topbarTitle.textContent = session.topic;
+        els.topbarMeta.innerHTML = `<span>${escapeHtml(session.id)}</span><span>·</span><span>${escapeHtml(session.agents.join(", "))}</span>`;
+        els.suggestionsWrap.style.display = "none";
+        els.debateBtn.style.display = "inline-flex";
+        els.optionsDrawer.classList.remove("open");
+        els.mainInput.placeholder = "Escribe una objeción o pregunta como juez (Ctrl+V para captura)...";
+
+        const blocks = [
+          `<div class="case-banner">
+            <h2>${escapeHtml(session.topic)}</h2>
+            ${session.context ? `<p>${escapeHtml(session.context)}</p>` : ""}
+            <div class="meta-chips">
+              <span class="meta-chip">${escapeHtml(session.status)}</span>
+              <span class="meta-chip">${escapeHtml(session.agents.join(", "))}</span>
+              ${session.workspaceDir ? `<span class="meta-chip">📁 ${escapeHtml(session.workspaceDir)}</span>` : ""}
+            </div>
+            ${renderImageStrip(session.images)}
+          </div>`,
+        ];
+
+        for (const round of session.rounds) {
+          blocks.push(`<div class="round-divider"><span>Ronda ${round.number} · ${escapeHtml(round.type)}</span></div>`);
+          if (round.userObjection || round.images?.length) {
+            blocks.push(`
+              <div class="judge-row">
+                <div class="judge-bubble">
+                  ${round.userObjection ? `<div>${escapeHtml(round.userObjection)}</div>` : ""}
+                  ${renderImageStrip(round.images)}
+                </div>
+              </div>
+            `);
+          }
+          for (const entry of round.entries) {
+            const cfg = state.agentMap[entry.agent] || {};
+            const duration = entry.durationMs ? `${(entry.durationMs / 1000).toFixed(1)}s` : "";
+            if (entry.error) {
+              blocks.push(`
+                <article class="agent-card">
+                  <div class="agent-head">
+                    <div class="agent-id"><span class="agent-dot"></span><span class="agent-name">${escapeHtml(entry.agent)}</span></div>
+                    <span class="agent-sub">${escapeHtml(duration)}</span>
+                  </div>
+                  <div class="error-msg">${escapeHtml(entry.error)}</div>
+                </article>
+              `);
+              continue;
+            }
+            const summary = entry.summary ?? entry.resumen ?? "";
+            const dissents = entry.dissents ?? entry.disidencias ?? "";
+            const reasoning = entry.reasoning ?? entry.razonamiento ?? "";
+            blocks.push(`
+              <article class="agent-card">
+                <div class="agent-head">
+                  <div class="agent-id">
+                    <span class="agent-dot"></span>
+                    <span class="agent-name">${escapeHtml(entry.agent)}</span>
+                    ${cfg.model ? `<span class="agent-sub">· ${escapeHtml(cfg.model)}</span>` : ""}
+                  </div>
+                  <span class="agent-sub">${escapeHtml(duration)}</span>
+                </div>
+                <div>
+                  <div class="section-tag">Resumen</div>
+                  <div class="rich">${renderMarkdown(summary)}</div>
+                </div>
+                <div>
+                  <div class="section-tag muted">Disidencias</div>
+                  <div class="rich">${renderMarkdown(dissents)}</div>
+                </div>
+                <details>
+                  <summary>Ver argumentos completos</summary>
+                  <div class="rich">${renderMarkdown(reasoning)}</div>
+                </details>
+              </article>
+            `);
+          }
+        }
+
+        els.centerCol.innerHTML = `<div class="thread">${blocks.join("")}</div>`;
+        els.scrollArea.scrollTop = els.scrollArea.scrollHeight;
+      }
+
+      function startThinking(label) {
+        state.busy = true;
+        els.sendBtn.disabled = true;
+        els.debateBtn.disabled = true;
+        els.canvas.classList.add("thinking");
+
+        let thread = els.centerCol.querySelector(".thread");
+        if (!thread) {
+          els.centerCol.innerHTML = `<div class="thread"></div>`;
+          thread = els.centerCol.querySelector(".thread");
+        }
+        const started = Date.now();
+        const card = document.createElement("div");
+        card.className = "thinking-card";
+        card.id = "thinkingCard";
+        card.innerHTML = `<span class="dots"><i></i><i></i><i></i></span><span id="thinkingText">${escapeHtml(label)} · 0s</span>`;
+        thread.appendChild(card);
+        els.scrollArea.scrollTop = els.scrollArea.scrollHeight;
+
+        state.thinkingTimer = setInterval(() => {
+          const sec = Math.floor((Date.now() - started) / 1000);
+          const t = document.getElementById("thinkingText");
+          if (t) t.textContent = `${label} · ${sec}s`;
+        }, 500);
+      }
+
+      function stopThinking() {
+        state.busy = false;
+        els.sendBtn.disabled = false;
+        els.debateBtn.disabled = false;
+        els.canvas.classList.remove("thinking");
+        if (state.thinkingTimer) {
+          clearInterval(state.thinkingTimer);
+          state.thinkingTimer = null;
+        }
+        document.getElementById("thinkingCard")?.remove();
+      }
+
+      async function loadAll() {
+        const [cases, agentsData] = await Promise.all([api("/api/casos"), api("/api/agentes")]);
+        state.cases = cases;
+        state.agents = agentsData.agents || [];
+        state.agentMap = Object.fromEntries(state.agents.map((a) => [a.name, a]));
+        els.agentPills.innerHTML = state.agents
+          .map(
+            (a) => `
+            <label class="agent-pill">
+              <input type="checkbox" value="${escapeHtml(a.name)}" ${a.isDefault ? "checked" : ""} />
+              <span>${escapeHtml(a.name)}</span>
+            </label>
+          `
+          )
+          .join("");
+        renderSessionList();
+        if (state.selectedId) {
+          await selectSession(state.selectedId);
+        } else {
+          showWelcome();
+        }
+      }
+
+      async function selectSession(id) {
+        state.selectedId = id;
+        renderSessionList();
+        const session = await api(`/api/casos/${encodeURIComponent(id)}`);
+        state.selectedSession = session;
+        renderSession(session);
+      }
+
+      els.toggleSidebarBtn.addEventListener("click", () => els.sidebar.classList.toggle("collapsed"));
+      els.brandHome.addEventListener("click", showWelcome);
+      els.newCaseBtn.addEventListener("click", () => {
+        showWelcome();
+        els.mainInput.focus();
+      });
+      els.refreshBtn.addEventListener("click", loadAll);
+      els.searchInput.addEventListener("input", renderSessionList);
+      els.optionsBtn.addEventListener("click", () => els.optionsDrawer.classList.toggle("open"));
+      els.attachBtn.addEventListener("click", () => els.fileInput.click());
+      els.fileInput.addEventListener("change", (e) => {
+        addFiles(e.target.files);
+        e.target.value = "";
+      });
+
+      document.querySelectorAll(".suggestion-chip").forEach((chip) => {
+        chip.addEventListener("click", () => {
+          els.mainInput.value = chip.dataset.prompt;
+          els.mainInput.focus();
+        });
+      });
+
+      document.addEventListener("paste", (e) => {
+        const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+        if (files.length) addFiles(files);
+      });
+
+      els.composerForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const text = els.mainInput.value.trim();
+        if (!text || state.busy) return;
+
+        const uploads = [...state.uploads];
+        els.mainInput.value = "";
+        state.uploads = [];
+        renderPendingUploads();
+
+        try {
+          if (!state.selectedId) {
+            const context = document.getElementById("contextInput").value.trim();
+            const workspaceDir = document.getElementById("workspaceInput").value.trim();
+            const debateRounds = Number(document.getElementById("roundsInput").value || 1);
+            const timeoutSecRaw = document.getElementById("timeoutInput").value.trim();
+            const agents = [...els.agentPills.querySelectorAll("input:checked")].map((i) => i.value);
+
+            els.suggestionsWrap.style.display = "none";
+            startThinking("Los magistrados están deliberando");
+            const created = await api("/api/casos", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                topic: text,
+                context,
+                workspaceDir,
+                imageUploads: uploads,
+                agents: agents.length ? agents : undefined,
+                debateRounds,
+                ...(timeoutSecRaw ? { timeoutSec: Number(timeoutSecRaw) } : {}),
+              }),
+            });
+            stopThinking();
+            state.selectedId = created.id;
+            await loadAll();
+          } else {
+            startThinking("Consultando a los magistrados");
+            const updated = await api(`/api/casos/${encodeURIComponent(state.selectedId)}/cuestionar`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ objection: text, imageUploads: uploads }),
+            });
+            stopThinking();
+            state.selectedSession = updated;
+            renderSession(updated);
+            await loadAll();
+          }
+        } catch (err) {
+          stopThinking();
+          const thread = els.centerCol.querySelector(".thread");
+          if (thread) {
+            const box = document.createElement("div");
+            box.className = "error-msg";
+            box.textContent = `Error: ${err.message}`;
+            thread.appendChild(box);
+          }
+        }
+      });
+
+      els.debateBtn.addEventListener("click", async () => {
+        if (!state.selectedId || state.busy) return;
+        try {
+          startThinking("Ejecutando ronda de réplica");
+          const updated = await api(`/api/casos/${encodeURIComponent(state.selectedId)}/debatir`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({}),
+          });
+          stopThinking();
+          state.selectedSession = updated;
+          renderSession(updated);
+          await loadAll();
+        } catch (err) {
+          stopThinking();
+        }
+      });
+
+      loadAll().catch((err) => {
+        els.centerCol.innerHTML = `<div class="welcome"><h1>Error</h1><p>${escapeHtml(err.message)}</p></div>`;
+      });
+    </script>
+  </body>
+</html>

@@ -22,13 +22,14 @@ export class AgyAgent extends BaseAgent {
     return args;
   }
 
-  async ask({ prompt, cwd, timeoutMs }) {
+  async ask({ prompt, cwd, timeoutMs, signal }) {
     const command = this.config.command || "agy";
     const stdout = await runProcess({
       command,
       args: this.buildArgs(prompt),
       timeoutMs: timeoutMs || this.config.timeoutMs || 90000,
       cwd,
+      signal,
     });
     return parseAgentOutput(stdout);
   }

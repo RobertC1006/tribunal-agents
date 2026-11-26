@@ -86,8 +86,16 @@ export function runProcess({
   maxOutputBytes = 4 * 1024 * 1024,
   input,
   cwd,
+  signal,
 }) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      const error = new Error(`Ejecución cancelada para "${command}".`);
+      error.name = "AbortError";
+      reject(error);
+      return;
+    }
+
     const child = spawn(command, args, {
       cwd,
       stdio: [input !== undefined ? "pipe" : "ignore", "pipe", "pipe"],
@@ -100,14 +108,23 @@ export function runProcess({
     let exited = false;
     let forceKillTimer;
 
+    const onAbort = () => {
+      const error = new Error(`Ejecución cancelada para "${command}".`);
+      error.name = "AbortError";
+      killProcess(error);
+    };
+
     const cleanupTimers = () => {
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
+      if (signal) signal.removeEventListener("abort", onAbort);
     };
 
     const killProcess = (reasonError) => {
       if (finished) return;
       finished = true;
+      clearTimeout(timer);
+      if (signal) signal.removeEventListener("abort", onAbort);
       child.kill("SIGTERM");
       forceKillTimer = setTimeout(() => {
         if (!exited) {
@@ -120,6 +137,10 @@ export function runProcess({
     const timer = setTimeout(() => {
       killProcess(new Error(`Timeout (${timeoutMs}ms) ejecutando "${command}".`));
     }, timeoutMs);
+
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     if (input !== undefined && child.stdin) {
       child.stdin.end(String(input));
