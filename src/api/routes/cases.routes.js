@@ -10,7 +10,7 @@ export function createCasesRouter(engine) {
   // Listar todas las sesiones dormidas/guardadas
   router.get("/", async (_req, res, next) => {
     try {
-      const cases = await engine.listarCasos();
+      const cases = await engine.listCases();
       res.json({ ok: true, data: cases });
     } catch (error) {
       next(error);
@@ -27,6 +27,8 @@ export function createCasesRouter(engine) {
         agents,
         includeDebateRound = true,
         debateRounds,
+        timeoutMs,
+        timeoutSec,
       } = req.body || {};
 
       if (!topic || typeof topic !== "string") {
@@ -43,12 +45,20 @@ export function createCasesRouter(engine) {
         });
       }
 
-      const session = await engine.abrirCaso({
+      const resolvedTimeoutMs =
+        timeoutMs !== undefined
+          ? timeoutMs
+          : timeoutSec !== undefined
+            ? Math.round(Number(timeoutSec) * 1000)
+            : undefined;
+
+      const session = await engine.openCase({
         topic,
         context,
         workspaceDir,
         agents,
         ...(debateRounds !== undefined ? { debateRounds } : { includeDebateRound }),
+        ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
       });
 
       res.status(201).json({ ok: true, data: session });
@@ -60,7 +70,7 @@ export function createCasesRouter(engine) {
   // Inspeccionar una sesión dormida sin gastar tokens (0 llamadas a IA)
   router.get("/:sessionId", async (req, res, next) => {
     try {
-      const session = await engine.inspeccionarCaso(req.params.sessionId);
+      const session = await engine.inspectCase(req.params.sessionId);
       res.json({ ok: true, data: session });
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -95,10 +105,50 @@ export function createCasesRouter(engine) {
         });
       }
 
-      const session = await engine.cuestionarCaso({
+      const session = await engine.challengeCase({
         sessionId: req.params.sessionId,
         objection,
         targetAgents,
+      });
+
+      res.json({ ok: true, data: session });
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        return res.status(404).json({
+          ok: false,
+          error: `Sesión "${req.params.sessionId}" no encontrada.`,
+        });
+      }
+      next(error);
+    }
+  });
+
+  // Ejecutar una ronda adicional de réplica/debate sobre una sesión dormida
+  router.post("/:sessionId/debatir", async (req, res, next) => {
+    try {
+      const { targetAgents, timeoutMs, timeoutSec } = req.body || {};
+
+      if (
+        targetAgents !== undefined &&
+        (!Array.isArray(targetAgents) || targetAgents.some((a) => typeof a !== "string" || !a.trim()))
+      ) {
+        return res.status(400).json({
+          ok: false,
+          error: "El campo 'targetAgents' debe ser un arreglo de nombres de agente.",
+        });
+      }
+
+      const resolvedTimeoutMs =
+        timeoutMs !== undefined
+          ? timeoutMs
+          : timeoutSec !== undefined
+            ? Math.round(Number(timeoutSec) * 1000)
+            : undefined;
+
+      const session = await engine.debateCase({
+        sessionId: req.params.sessionId,
+        targetAgents,
+        ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
       });
 
       res.json({ ok: true, data: session });

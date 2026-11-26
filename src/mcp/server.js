@@ -31,7 +31,14 @@ const TOOLS = [
         debateRounds: {
           type: "integer",
           minimum: 0,
+          maximum: 5,
           description: "Número de rondas de debate tras la apertura ciega (por defecto 1).",
+        },
+        timeoutSec: {
+          type: "integer",
+          minimum: 1,
+          maximum: 3600,
+          description: "Timeout por agente en segundos (opcional; por defecto 90s o 300s con workspaceDir).",
         },
       },
       required: ["topic"],
@@ -53,6 +60,29 @@ const TOOLS = [
         },
       },
       required: ["sessionId", "objection"],
+    },
+  },
+  {
+    name: "debatir_caso",
+    description:
+      "Lanza una ronda adicional de réplica/debate sobre un caso guardado para que los magistrados lean las posturas recientes y debatan entre sí.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "ID del caso a redebatir." },
+        targetAgents: {
+          type: "array",
+          items: { type: "string" },
+          description: "Subconjunto de agentes participantes (opcional).",
+        },
+        timeoutSec: {
+          type: "integer",
+          minimum: 1,
+          maximum: 3600,
+          description: "Timeout por agente en segundos (opcional).",
+        },
+      },
+      required: ["sessionId"],
     },
   },
   {
@@ -90,11 +120,20 @@ function getConfigPath() {
     : DEFAULT_CONFIG_PATH;
 }
 
-async function createRuntime() {
+let sharedRuntime = null;
+
+async function getRuntime() {
   const config = await loadConfig(getConfigPath());
-  const store = new SessionStore(config.sessionsDir);
-  const engine = new TribunalEngine({ config, store });
-  return { config, store, engine };
+  if (!sharedRuntime) {
+    const store = new SessionStore(config.sessionsDir);
+    const engine = new TribunalEngine({ config, store });
+    sharedRuntime = { config, store, engine };
+  } else {
+    sharedRuntime.config = config;
+    sharedRuntime.store.sessionsDir = config.sessionsDir;
+    sharedRuntime.engine.config = config;
+  }
+  return sharedRuntime;
 }
 
 function formatSessionForMcp(session, store) {
@@ -119,9 +158,9 @@ function formatSessionForMcp(session, store) {
       if (entry.error) {
         lines.push(`- **Error:** ${entry.error}`);
       } else {
-        lines.push(`- **Resumen:** ${entry.resumen}`);
-        lines.push(`- **Disidencias:** ${entry.disidencias}`);
-        lines.push(`- **Argumentos:** ${entry.razonamiento}`);
+        lines.push(`- **Resumen:** ${entry.summary ?? entry.resumen ?? ""}`);
+        lines.push(`- **Disidencias:** ${entry.dissents ?? entry.disidencias ?? ""}`);
+        lines.push(`- **Argumentos:** ${entry.reasoning ?? entry.razonamiento ?? ""}`);
       }
       lines.push("");
     }
@@ -133,18 +172,19 @@ function formatSessionForMcp(session, store) {
 }
 
 async function handleToolCall(name, args = {}) {
-  const { config, store, engine } = await createRuntime();
+  const { config, store, engine } = await getRuntime();
 
   if (name === "abrir_caso") {
     if (!args.topic || typeof args.topic !== "string") {
       throw new Error("El argumento 'topic' es obligatorio.");
     }
-    const session = await engine.abrirCaso({
+    const session = await engine.openCase({
       topic: args.topic,
       context: args.context || "",
       workspaceDir: args.workspaceDir || "",
       agents: args.agents,
       ...(args.debateRounds !== undefined ? { debateRounds: args.debateRounds } : {}),
+      ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
     return formatSessionForMcp(session, store);
   }
@@ -153,10 +193,22 @@ async function handleToolCall(name, args = {}) {
     if (!args.sessionId || !args.objection) {
       throw new Error("Los argumentos 'sessionId' y 'objection' son obligatorios.");
     }
-    const session = await engine.cuestionarCaso({
+    const session = await engine.challengeCase({
       sessionId: args.sessionId,
       objection: args.objection,
       targetAgents: args.targetAgents,
+    });
+    return formatSessionForMcp(session, store);
+  }
+
+  if (name === "debatir_caso") {
+    if (!args.sessionId) {
+      throw new Error("El argumento 'sessionId' es obligatorio.");
+    }
+    const session = await engine.debateCase({
+      sessionId: args.sessionId,
+      targetAgents: args.targetAgents,
+      ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
     return formatSessionForMcp(session, store);
   }
@@ -165,12 +217,12 @@ async function handleToolCall(name, args = {}) {
     if (!args.sessionId) {
       throw new Error("El argumento 'sessionId' es obligatorio.");
     }
-    const session = await engine.inspeccionarCaso(args.sessionId);
+    const session = await engine.inspectCase(args.sessionId);
     return formatSessionForMcp(session, store);
   }
 
   if (name === "listar_casos") {
-    const cases = await engine.listarCasos();
+    const cases = await engine.listCases();
     if (!cases.length) return "⚖️ **TRIBUNAL DE AGENTES** — No hay sesiones guardadas todavía.";
     const rows = cases.map(
       (c) => `- \`${c.id}\` [${c.status}] · **${c.roundsCount} rondas** · ${c.topic}`
