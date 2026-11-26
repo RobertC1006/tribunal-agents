@@ -6,12 +6,15 @@ import { agentColor, agentOptions, askLine, colorize, select } from "../terminal
 import { DEFAULT_CONFIG_PATH, LOCAL_CONFIG_PATH } from "./loadConfig.js";
 import { modelCatalog } from "./modelCatalog.js";
 
+const REASONING_EFFORTS = ["low", "medium", "high", "xhigh"];
+
 export function printAgents({ agents, defaultAgents }, print = console.log) {
   for (const { value: name, badge, detail, color } of agentOptions(agents, defaultAgents)) {
     const tag = colorize(`[${badge}]`, color);
+    const effort = agents[name]?.reasoningEffort ? colorize(` · ${agents[name].reasoningEffort}`, 93) : "";
     const timeoutSec = agents[name]?.timeoutMs ? colorize(` · ${Math.round(agents[name].timeoutMs / 1000)}s`, 90) : "";
     const selected = defaultAgents.includes(name) ? colorize(" ★ predeterminado", 92) : "";
-    print(`  ${tag} ${colorize(name, `1;${color}`)} ${colorize("·", 90)} ${detail}${timeoutSec}${selected}`);
+    print(`  ${tag} ${colorize(name, `1;${color}`)} ${colorize("·", 90)} ${detail}${effort}${timeoutSec}${selected}`);
   }
 }
 
@@ -61,12 +64,13 @@ export async function editConfig({
           { value: "3", label: "Elegir participantes predeterminados", detail: `${defaultAgents.length} activos`, color: 93 },
           { value: "4", label: "Eliminar perfil", detail: "quita simuladores o perfiles sobrantes", color: 91 },
           { value: "5", label: "Cambiar timeout", detail: "tiempo máximo de espera por perfil", color: 95 },
+          { value: "6", label: "Cambiar nivel de razonamiento", detail: "low, medium, high o xhigh", color: 93 },
           { value: "0", label: "Salir", color: 90 },
         ]);
       } else {
         print("\nParticipantes del Tribunal\n");
         printAgents({ agents, defaultAgents }, print);
-        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n5. Cambiar timeout\n0. Salir");
+        print("\n1. Cambiar modelo\n2. Crear perfil a partir de otro\n3. Elegir participantes predeterminados\n4. Eliminar perfil\n5. Cambiar timeout\n6. Cambiar nivel de razonamiento\n0. Salir");
         option = await ask("Opción:");
       }
       if (option === undefined || option === "0") return;
@@ -209,6 +213,58 @@ export async function editConfig({
           [target]: { ...agents[target], timeoutMs: seconds * 1000 },
         };
         statusMessage = `Timeout de "${target}" actualizado a ${seconds}s.`;
+      } else if (option === "6") {
+        const target = interactive
+          ? await choose(
+              "Perfil para nivel de razonamiento",
+              agentOptions(agents, defaultAgents).filter(({ value }) => agents[value].type !== "mock")
+            )
+          : await ask("Nombre del perfil:");
+        if (target === undefined) {
+          if (interactive) continue;
+          return;
+        }
+        if (!Object.hasOwn(agents, target) || agents[target].type === "mock") {
+          print("Elige un perfil real de la lista.");
+          continue;
+        }
+        if (agents[target].type === "agy") {
+          print("Nota: Antigravity define el esfuerzo dentro del nombre del modelo (usa «Cambiar modelo»).");
+        }
+        const currentEffort = agents[target].reasoningEffort ?? "-";
+        let effortInput;
+        if (interactive) {
+          effortInput = await choose(
+            `Razonamiento para ${target} (actual: ${currentEffort === "-" ? "predeterminado" : currentEffort})`,
+            [
+              { value: "low", label: "low", detail: "rápido · timeout base 90s", color: 92 },
+              { value: "medium", label: "medium", detail: "equilibrado · timeout base 90s", color: 96 },
+              { value: "high", label: "high", detail: "profundo · piso automático 180s", color: 93 },
+              { value: "xhigh", label: "xhigh", detail: "máximo (en Claude usa high) · piso 300s", color: 95 },
+              { value: "-", label: "Predeterminado del proveedor", color: 90 },
+            ],
+            { selected: [currentEffort] }
+          );
+        } else {
+          effortInput = await ask(`Nivel (${REASONING_EFFORTS.join("/")}, - para restablecer) [${currentEffort}]:`);
+        }
+        if (effortInput === undefined) {
+          if (interactive) continue;
+          return;
+        }
+        const normalized = effortInput.toLowerCase();
+        const updatedProfile = { ...agents[target] };
+        if (normalized === "-") {
+          delete updatedProfile.reasoningEffort;
+          statusMessage = `Razonamiento de "${target}" restablecido al predeterminado.`;
+        } else if (REASONING_EFFORTS.includes(normalized)) {
+          updatedProfile.reasoningEffort = normalized;
+          statusMessage = `Razonamiento de "${target}" actualizado a ${normalized}.`;
+        } else {
+          print(`Usa uno de: ${REASONING_EFFORTS.join(", ")} o "-" para restablecer.`);
+          continue;
+        }
+        config.agents = { ...agents, [target]: updatedProfile };
       } else {
         print("Elige una opción del menú.");
         continue;

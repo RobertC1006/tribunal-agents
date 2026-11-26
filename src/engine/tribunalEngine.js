@@ -6,8 +6,30 @@ import { buildPrompt } from "../sessions/contextBuilder.js";
 
 export const MAX_DEBATE_ROUNDS = 5;
 export const WORKSPACE_TIMEOUT_MS = 300000;
+export const HIGH_EFFORT_TIMEOUT_MS = 180000;
+export const XHIGH_EFFORT_TIMEOUT_MS = 300000;
 export const MIN_TIMEOUT_MS = 1000;
 export const MAX_TIMEOUT_MS = 3600000;
+
+export function resolveAgentTimeoutMs(
+  agentConfig = {},
+  { sessionTimeoutMs, roundTimeoutMs, hasWorkspace = false } = {},
+) {
+  const effort = String(agentConfig.reasoningEffort || "").toLowerCase();
+  const model = String(agentConfig.model || "").toLowerCase();
+  let effortFloor = 0;
+  if (effort === "xhigh" || /(?:^|[-_])xhigh$/.test(model)) {
+    effortFloor = XHIGH_EFFORT_TIMEOUT_MS;
+  } else if (effort === "high" || /(?:^|[-_])high$/.test(model)) {
+    effortFloor = HIGH_EFFORT_TIMEOUT_MS;
+  }
+
+  const profileTimeout = agentConfig.timeoutMs || 90000;
+  const explicitTimeout = roundTimeoutMs || sessionTimeoutMs || 0;
+  const workspaceFloor = hasWorkspace ? WORKSPACE_TIMEOUT_MS : 0;
+
+  return Math.max(profileTimeout, explicitTimeout, effortFloor, workspaceFloor);
+}
 
 function validateTimeoutMs(timeoutMs) {
   if (timeoutMs === undefined) return undefined;
@@ -285,14 +307,11 @@ export class TribunalEngine {
         onAgentStart?.({ agent: agent.name, roundNumber, roundType });
 
         try {
-          const profileTimeout = agent.config.timeoutMs || 90000;
-          const requestedTimeout =
-            roundTimeoutMs ||
-            session.timeoutMs ||
-            (session.workspaceDir ? WORKSPACE_TIMEOUT_MS : 0);
-          const timeoutMs = requestedTimeout
-            ? Math.max(profileTimeout, requestedTimeout)
-            : agent.config.timeoutMs;
+          const timeoutMs = resolveAgentTimeoutMs(agent.config, {
+            sessionTimeoutMs: session.timeoutMs,
+            roundTimeoutMs,
+            hasWorkspace: Boolean(session.workspaceDir),
+          });
           const result = await agent.ask({
             prompt,
             roundType,
