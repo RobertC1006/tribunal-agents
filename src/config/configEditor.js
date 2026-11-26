@@ -231,6 +231,9 @@ export async function editConfig({
         if (agents[target].type === "agy") {
           print("Nota: Antigravity define el esfuerzo dentro del nombre del modelo (usa «Cambiar modelo»).");
         }
+        if (agents[target].type === "opencode") {
+          print("Nota: OpenCode define el esfuerzo como variante del modelo, p. ej. proveedor/modelo#high (usa «Cambiar modelo»).");
+        }
         const currentEffort = agents[target].reasoningEffort ?? "-";
         let effortInput;
         if (interactive) {

@@ -31,6 +31,13 @@ export function parseAgyModels(text) {
   });
 }
 
+export function parseOpencodeModels(text) {
+  return text.split(/\r?\n/).flatMap((line) => {
+    const id = line.trim();
+    return /^[\w.-]+\/\S+$/.test(id) ? [{ value: id, label: id, detail: "OpenCode" }] : [];
+  });
+}
+
 export async function modelCatalog(profile) {
   if (profile.type === "claude") {
     return claudeModels.map((id) => ({ value: id, label: id, detail: "Claude Code · disponibilidad según la cuenta" }));
@@ -44,6 +51,14 @@ export async function modelCatalog(profile) {
       // La lista de la cuenta requiere que Antigravity pueda iniciar.
     }
     return agyExamples.map((id) => ({ value: id, label: id, detail: "Ejemplo oficial · acceso sin verificar" }));
+  }
+  if (profile.type === "opencode") {
+    try {
+      const stdout = await runProcess({ command: profile.command || "opencode", args: ["models"], timeoutMs: 7000 });
+      return parseOpencodeModels(stdout);
+    } catch {
+      // Sin OpenCode instalado queda la entrada manual.
+    }
   }
   if (profile.type === "codex") {
     const filename = path.join(process.env.CODEX_HOME || path.join(homedir(), ".codex"), "models_cache.json");

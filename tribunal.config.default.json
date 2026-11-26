@@ -33,6 +33,11 @@
       "command": "agy",
       "timeoutMs": 180000
     },
+    "opencode": {
+      "type": "opencode",
+      "command": "opencode",
+      "timeoutMs": 180000
+    },
     "ollama-local": {
       "type": "ollama",
       "baseUrl": "http://localhost:11434",

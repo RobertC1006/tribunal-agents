@@ -48,7 +48,7 @@ test("el prompt solo asigna un rol cuando el usuario lo configura", () => {
 
 test("cada agente específico se resuelve desde su propio módulo en el registry", () => {
   const types = listSupportedAgentTypes();
-  assert.deepEqual(types.sort(), ["agy", "claude", "codex", "mock", "ollama"]);
+  assert.deepEqual(types.sort(), ["agy", "claude", "codex", "mock", "ollama", "opencode"]);
 
   const claude = createAgent("claude", { type: "claude", model: "sonnet" });
   assert.deepEqual(claude.buildArgs("hola"), ["-p", "--model", "sonnet", "hola"]);

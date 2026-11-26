@@ -4,11 +4,11 @@
 
 # Agent Tribunal
 
-Proyecto Open Source en **Node.js (ESM) + Express** con arquitectura modular para convocar múltiples agentes de IA (`claude`, `codex`, `agy` y modelos locales como **Ollama**), hacer que debatan en apertura ciega y réplica, y permitir que el usuario audite y cuestione sus resultados desde CLI, API HTTP o **MCP**.
+Proyecto Open Source en **Node.js (ESM) + Express** con arquitectura modular para convocar múltiples agentes de IA (`claude`, `codex`, `agy`, `opencode` y modelos locales como **Ollama**), hacer que debatan en apertura ciega y réplica, y permitir que el usuario audite y cuestione sus resultados desde CLI, API HTTP o **MCP**.
 
 ## Instalación rápida
 
-Requisitos: **Node.js 20+** y **pnpm**. Los CLIs de IA (`claude`, `codex`, `agy` u `ollama`) son opcionales: el repositorio incluye una configuración predeterminada con simuladores (`mock`) para probarlo sin gastar tokens.
+Requisitos: **Node.js 20+** y **pnpm**. Los CLIs de IA (`claude`, `codex`, `agy`, `opencode` u `ollama`) son opcionales: el repositorio incluye una configuración predeterminada con simuladores (`mock`) para probarlo sin gastar tokens.
 
 ```bash
 pnpm install --frozen-lockfile
@@ -63,7 +63,7 @@ Escucha por defecto en `http://127.0.0.1:3000` (configurable con `HOST` y `PORT`
 
 ```text
 src/
-├── agents/                     # Conectores: claude, codex, agy, ollama y mock
+├── agents/                     # Conectores: claude, codex, agy, opencode, ollama y mock
 ├── sessions/                   # Persistencia atómica (JSON + acta MD) y compactación de contexto
 ├── engine/tribunalEngine.js    # Motor central compartido por CLI, Express y MCP
 ├── api/                        # Servidor Express local
