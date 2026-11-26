@@ -1,42 +1,43 @@
 {
   "sessionsDir": "./sessions",
   "defaultAgents": [
-    "claude",
-    "codex",
-    "agy"
+    "mock-cautious",
+    "mock-pragmatic",
+    "mock-critic"
   ],
   "agents": {
+    "mock-cautious": {
+      "type": "mock",
+      "stance": "cauteloso"
+    },
+    "mock-pragmatic": {
+      "type": "mock",
+      "stance": "pragmatico"
+    },
+    "mock-critic": {
+      "type": "mock",
+      "stance": "critico"
+    },
     "claude": {
       "type": "claude",
       "command": "claude",
-      "timeoutMs": 180000,
-      "model": "claude-opus-5-5"
+      "timeoutMs": 180000
     },
     "codex": {
       "type": "codex",
       "command": "codex",
-      "timeoutMs": 180000,
-      "model": "gpt-6.2-astra"
-    },
-    "claude1": {
-      "type": "claude",
-      "model": "claude-fable-5-2"
-    },
-    "claude2": {
-      "type": "claude",
-      "model": "claude-opus-5-5"
+      "timeoutMs": 180000
     },
     "agy": {
       "type": "agy",
       "command": "agy",
-      "timeoutMs": 180000,
-      "model": "gemini-4-neon-high"
+      "timeoutMs": 180000
     },
     "ollama-local": {
       "type": "ollama",
       "baseUrl": "http://localhost:11434",
       "model": "qwen2.5-coder:7b",
-      "timeoutMs": 120000
+      "timeoutMs": 180000
     }
   }
 }

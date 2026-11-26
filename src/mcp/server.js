@@ -1,19 +1,14 @@
 #!/usr/bin/env node
-import path from "node:path";
 import { createInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
 import { loadConfig } from "../config/loadConfig.js";
 import { TribunalEngine } from "../engine/tribunalEngine.js";
 import { SessionStore } from "../sessions/sessionStore.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CONFIG_PATH = path.resolve(__dirname, "../../tribunal.config.json");
 
 const TOOLS = [
   {
     name: "abrir_caso",
     description:
-      "Convoca al Tribunal de Agentes para debatir una decisión técnica. Si pasas workspaceDir, los agentes CLI investigan el código real del proyecto en modo solo lectura antes de opinar.",
+      "Convoca al Tribunal de Agentes para debatir una decisión técnica. Si pasas workspaceDir, los agentes CLI se ejecutan en esa carpeta con instrucción de solo lectura (sujeto a los permisos de cada CLI).",
     inputSchema: {
       type: "object",
       properties: {
@@ -21,7 +16,7 @@ const TOOLS = [
         context: { type: "string", description: "Contexto o restricciones adicionales." },
         workspaceDir: {
           type: "string",
-          description: "Ruta absoluta del proyecto que los agentes pueden leer e investigar (solo lectura).",
+          description: "Ruta absoluta del proyecto que los agentes CLI pueden inspeccionar.",
         },
         agents: {
           type: "array",
@@ -114,16 +109,10 @@ const TOOLS = [
   },
 ];
 
-function getConfigPath() {
-  return process.env.TRIBUNAL_CONFIG
-    ? path.resolve(process.env.TRIBUNAL_CONFIG)
-    : DEFAULT_CONFIG_PATH;
-}
-
 let sharedRuntime = null;
 
 async function getRuntime() {
-  const config = await loadConfig(getConfigPath());
+  const config = await loadConfig();
   if (!sharedRuntime) {
     const store = new SessionStore(config.sessionsDir);
     const engine = new TribunalEngine({ config, store });

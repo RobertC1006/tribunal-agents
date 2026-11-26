@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { agentColor, agentOptions, askLine, colorize, select } from "../terminal.js";
+import { DEFAULT_CONFIG_PATH, LOCAL_CONFIG_PATH } from "./loadConfig.js";
 import { modelCatalog } from "./modelCatalog.js";
 
 export function printAgents({ agents, defaultAgents }, print = console.log) {
@@ -14,7 +15,8 @@ export function printAgents({ agents, defaultAgents }, print = console.log) {
 }
 
 export async function editConfig({
-  configPath = "tribunal.config.json",
+  configPath = LOCAL_CONFIG_PATH,
+  fallbackPath = DEFAULT_CONFIG_PATH,
   input = process.stdin,
   output = process.stdout,
 } = {}) {
@@ -34,7 +36,18 @@ export async function editConfig({
 
   try {
     while (true) {
-      const raw = await readFile(configPath, "utf8");
+      let raw;
+      let existed = true;
+      try {
+        raw = await readFile(configPath, "utf8");
+      } catch (error) {
+        if (error.code === "ENOENT" && fallbackPath) {
+          raw = await readFile(fallbackPath, "utf8");
+          existed = false;
+        } else {
+          throw error;
+        }
+      }
       const config = JSON.parse(raw);
       const { agents } = config;
       const defaultAgents = Array.isArray(config.defaultAgents) ? config.defaultAgents : Object.keys(agents);
@@ -202,9 +215,9 @@ export async function editConfig({
 
       const tempPath = `${configPath}.${randomUUID()}.tmp`;
       try {
-        const { mode } = await stat(configPath);
+        const mode = existed ? (await stat(configPath)).mode : 0o644;
         await writeFile(tempPath, `${JSON.stringify(config, null, 2)}\n`, { mode, flag: "wx" });
-        if (await readFile(configPath, "utf8") !== raw) {
+        if (existed && await readFile(configPath, "utf8") !== raw) {
           print("La configuración cambió mientras editabas. Vuelve a elegir la opción.");
           continue;
         }

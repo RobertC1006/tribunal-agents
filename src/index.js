@@ -104,20 +104,14 @@ async function runMainMenu() {
     if (!action || action === "salir") return;
 
     if (action === "abrir") {
-      await handleOpen({ args: [], config, engine, store, isInteractive: true });
+      const session = await handleOpen({ args: [], config, engine, store, isInteractive: true });
+      if (session) {
+        await promptSessionFollowUp(session.id, { config, engine, store });
+      }
     } else if (action === "ver") {
       const session = await handleView({ args: [], config, engine, isInteractive: true });
       if (session) {
-        const next = await select(`Caso ${session.id}`, [
-          { value: "cuestionar", label: "Añadir cuestionamiento", detail: "despierta la sesión con tu objeción", color: 95 },
-          { value: "debatir", label: "Redebatir última ronda", detail: "los agentes se replican entre sí", color: 93 },
-          { value: "volver", label: "Volver al menú", color: 90 },
-        ]);
-        if (next === "cuestionar") {
-          await handleChallenge({ args: [session.id], config, engine, store, isInteractive: true });
-        } else if (next === "debatir") {
-          await handleDebate({ args: [session.id], config, engine, store, isInteractive: true });
-        }
+        await promptSessionFollowUp(session.id, { config, engine, store });
       }
     } else if (action === "agentes") {
       console.log(`\n${divider("Agentes configurados", 96)}\n`);
@@ -129,29 +123,45 @@ async function runMainMenu() {
   }
 }
 
+async function promptSessionFollowUp(sessionId, { config, engine, store }) {
+  while (true) {
+    const next = await select(`¿Qué deseas hacer con ${sessionId}?`, [
+      { value: "cuestionar", label: "Escribir cuestionamiento", detail: "envía una objeción o repregunta como juez", color: 95 },
+      { value: "debatir", label: "Redebatir última ronda", detail: "los magistrados se replican entre sí", color: 93 },
+      { value: "volver", label: "Dejar dormida y volver al menú", detail: "0 memoria · guardada en disco", color: 90 },
+    ]);
+    if (!next || next === "volver") return;
+    if (next === "cuestionar") {
+      await handleChallenge({ args: [sessionId], config, engine, store, isInteractive: true });
+    } else if (next === "debatir") {
+      await handleDebate({ args: [sessionId], config, engine, store, isInteractive: true });
+    }
+  }
+}
+
 async function handleOpen({ args, config, engine, store, isInteractive }) {
   let [topic, context = "", agentsCsv, debateRounds = "1", workspaceDir = "", timeoutSec = ""] = args;
   let agents = parseAgentNames(agentsCsv);
 
   if (!args.length && isInteractive) {
     topic = await askLine("Tema del caso (Enter para volver):");
-    if (!topic) return;
+    if (!topic) return null;
     context = await askLine("Contexto (opcional):");
-    if (context === undefined) return;
-    workspaceDir = await askLine("Ruta del código a investigar en solo lectura (Enter para omitir):");
-    if (workspaceDir === undefined) return;
+    if (context === undefined) return null;
+    workspaceDir = await askLine("Ruta del código a inspeccionar (Enter para omitir):");
+    if (workspaceDir === undefined) return null;
     agents = await select(
       "Participantes del caso",
       agentOptions(config.agents, config.defaultAgents),
       { selected: config.defaultAgents, multiple: true }
     );
-    if (!agents) return;
+    if (!agents) return null;
     debateRounds = await askLine("Rondas de debate [1]:");
-    if (debateRounds === undefined) return;
+    if (debateRounds === undefined) return null;
     debateRounds ||= "1";
     const defaultSec = workspaceDir ? "300" : "90";
     timeoutSec = await askLine(`Timeout por agente en segundos [${defaultSec}]:`);
-    if (timeoutSec === undefined) return;
+    if (timeoutSec === undefined) return null;
   }
 
   if (!topic) {
@@ -190,6 +200,7 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
       },
     });
     printSavedSession(session, store);
+    return session;
   } finally {
     progress.stop();
   }
