@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { loadConfig } from "../config/loadConfig.js";
 import { TribunalEngine } from "../engine/tribunalEngine.js";
 import { SessionStore } from "../sessions/sessionStore.js";

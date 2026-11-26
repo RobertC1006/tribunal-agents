@@ -4,6 +4,18 @@
   "description": "Tribunal modular de agentes IA (CLIs, modelos locales y MCP) con sesiones persistentes y cuestionamiento humano.",
   "main": "src/index.js",
   "type": "module",
+  "bin": {
+    "agent-tribunal": "src/index.js",
+    "agent-tribunal-mcp": "src/mcp/server.js",
+    "agent-tribunal-ui": "src/api/server.js"
+  },
+  "files": [
+    "src/",
+    "assets/",
+    "tribunal.config.default.json",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "start": "node src/index.js",
     "server": "node src/api/server.js",

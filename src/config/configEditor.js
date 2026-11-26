@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { createInterface } from "node:readline";
 import { agentColor, agentOptions, askLine, colorize, select } from "../terminal.js";
 import { DEFAULT_CONFIG_PATH, LOCAL_CONFIG_PATH } from "./loadConfig.js";
@@ -215,6 +216,7 @@ export async function editConfig({
 
       const tempPath = `${configPath}.${randomUUID()}.tmp`;
       try {
+        await mkdir(path.dirname(configPath), { recursive: true });
         const mode = existed ? (await stat(configPath)).mode : 0o644;
         await writeFile(tempPath, `${JSON.stringify(config, null, 2)}\n`, { mode, flag: "wx" });
         if (existed && await readFile(configPath, "utf8") !== raw) {
