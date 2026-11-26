@@ -6,14 +6,17 @@ import { BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
  * por lo que `--model` y `extraArgs` deben ir antes de `-p`.
  */
 export class AgyAgent extends BaseAgent {
-  buildArgs(prompt) {
+  buildArgs(prompt, { readOnly = false } = {}) {
     const args = [];
     if (this.config.model) {
       args.push("--model", this.config.model);
     }
-    if (Array.isArray(this.config.extraArgs)) {
-      args.push(...this.config.extraArgs);
+    const extraArgs = Array.isArray(this.config.extraArgs) ? this.config.extraArgs : [];
+    const hasMode = extraArgs.some((arg) => arg === "--mode" || arg.startsWith("--mode="));
+    if (readOnly && !hasMode) {
+      args.push("--mode", "plan");
     }
+    args.push(...extraArgs);
     if (typeof prompt === "string" && prompt.startsWith("-")) {
       args.push(`-p=${prompt}`);
     } else {
@@ -22,11 +25,11 @@ export class AgyAgent extends BaseAgent {
     return args;
   }
 
-  async ask({ prompt, cwd, timeoutMs, signal }) {
+  async ask({ prompt, cwd, timeoutMs, readOnly = false, signal }) {
     const command = this.config.command || "agy";
     const stdout = await runProcess({
       command,
-      args: this.buildArgs(prompt),
+      args: this.buildArgs(prompt, { readOnly }),
       timeoutMs: timeoutMs || this.config.timeoutMs || 90000,
       cwd,
       signal,
