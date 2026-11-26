@@ -1,14 +1,20 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import { createAgentsRouter } from "./routes/agents.routes.js";
 import { createCasesRouter } from "./routes/cases.routes.js";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = path.join(__dirname, "public");
+
 /**
- * Construye la app de Express desacoplada del puerto (facilita pruebas y extensión).
+ * Builds the Express app decoupled from port binding (easy to test and extend).
  */
 export function createApp({ config, engine }) {
   const app = express();
 
-  app.use(express.json({ limit: "256kb" }));
+  app.use(express.json({ limit: "15mb" }));
+  app.use(express.static(PUBLIC_DIR));
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true, service: "tribunal-agentes" });

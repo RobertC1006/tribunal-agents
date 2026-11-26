@@ -13,7 +13,8 @@ async function startServer() {
   const app = createApp({ config, engine });
 
   app.listen(PORT, HOST, () => {
-    console.log(`⚖️  Tribunal de Agentes escuchando en http://${HOST}:${PORT}`);
+    console.log(`⚖️  Agent Tribunal (visor web + API) en http://${HOST}:${PORT}`);
+    console.log(`   - UI   http://${HOST}:${PORT}/`);
     console.log(`   - GET  /health`);
     console.log(`   - GET  /api/agentes`);
     console.log(`   - GET  /api/casos`);

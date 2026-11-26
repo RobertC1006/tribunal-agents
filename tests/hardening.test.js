@@ -173,6 +173,13 @@ test("API Express soporta debateRounds, expone model en /api/agentes y responde 
       body: "{json-invalido",
     });
     assert.equal(badJsonRes.status, 400);
+
+    // 7. GET / sirve el visor web HTML
+    const uiRes = await fetch(`${baseUrl}/`);
+    assert.equal(uiRes.status, 200);
+    assert.match(uiRes.headers.get("content-type") || "", /text\/html/);
+    const html = await uiRes.text();
+    assert.match(html, /Agent Tribunal/);
   } finally {
     await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
     await rm(tempDir, { recursive: true, force: true });
