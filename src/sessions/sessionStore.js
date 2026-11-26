@@ -3,6 +3,13 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import path from "node:path";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+const ATTACHMENT_NAME_PATTERN = /^[a-zA-Z0-9_-]+\.(png|jpe?g|webp|gif)$/i;
+const MIME_TO_EXT = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
 
 export function assertValidSessionId(sessionId) {
   if (typeof sessionId !== "string" || !SESSION_ID_PATTERN.test(sessionId)) {
@@ -38,6 +45,35 @@ export class SessionStore {
   getMarkdownPath(sessionId) {
     assertValidSessionId(sessionId);
     return path.join(this.sessionsDir, `${sessionId}.md`);
+  }
+
+  getAttachmentsDir() {
+    return path.join(this.sessionsDir, "attachments");
+  }
+
+  getAttachmentPath(fileName) {
+    if (typeof fileName !== "string" || !ATTACHMENT_NAME_PATTERN.test(fileName)) {
+      const error = new Error(`Nombre de adjunto inválido: "${fileName}".`);
+      error.statusCode = 400;
+      throw error;
+    }
+    return path.join(this.getAttachmentsDir(), fileName);
+  }
+
+  async saveAttachment({ dataUrl }) {
+    const match = String(dataUrl || "").match(/^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!match) {
+      const error = new Error("Formato de imagen inválido. Usa PNG, JPEG, WEBP o GIF en data URL base64.");
+      error.statusCode = 400;
+      throw error;
+    }
+    const ext = MIME_TO_EXT[match[1]];
+    const fileName = `img-${randomUUID().slice(0, 12)}.${ext}`;
+    const attachmentsDir = this.getAttachmentsDir();
+    await mkdir(attachmentsDir, { recursive: true });
+    const targetPath = path.join(attachmentsDir, fileName);
+    await writeFile(targetPath, Buffer.from(match[2], "base64"));
+    return targetPath;
   }
 
   async save(session) {
@@ -107,6 +143,7 @@ export function renderMarkdownTranscript(session) {
     `- **Estado:** \`${session.status}\``,
     `- **Agentes:** ${session.agents.join(", ")}`,
     ...(session.workspaceDir ? [`- **Proyecto:** \`${session.workspaceDir}\``] : []),
+    ...(session.images?.length ? [`- **Imágenes:** ${session.images.map((p) => `\`${p}\``).join(", ")}`] : []),
     `- **Creada:** ${session.createdAt}`,
     `- **Actualizada:** ${session.updatedAt}`,
     "",

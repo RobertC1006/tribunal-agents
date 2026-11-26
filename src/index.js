@@ -142,6 +142,7 @@ async function promptSessionFollowUp(sessionId, { config, engine, store }) {
 async function handleOpen({ args, config, engine, store, isInteractive }) {
   let [topic, context = "", agentsCsv, debateRounds = "1", workspaceDir = "", timeoutSec = ""] = args;
   let agents = parseAgentNames(agentsCsv);
+  let images = [];
 
   if (!args.length && isInteractive) {
     topic = await askLine("Tema del caso (Enter para volver):");
@@ -150,6 +151,9 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
     if (context === undefined) return null;
     workspaceDir = await askLine("Ruta del código a inspeccionar (Enter para omitir):");
     if (workspaceDir === undefined) return null;
+    const imagesInput = await askLine("Imágenes adjuntas (rutas separadas por coma, Enter para omitir):");
+    if (imagesInput === undefined) return null;
+    images = parseImagePaths(imagesInput);
     agents = await select(
       "Participantes del caso",
       agentOptions(config.agents, config.defaultAgents),
@@ -176,6 +180,7 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
   const sub = [
     context,
     workspaceDir ? `Proyecto: ${workspaceDir}` : "",
+    images.length ? `Imágenes: ${images.length}` : "",
     parsedTimeoutMs ? `Timeout: ${Math.round(parsedTimeoutMs / 1000)}s` : "",
     `Magistrados: ${chosen.join(", ")}`,
   ]
@@ -189,6 +194,7 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
       topic,
       context,
       workspaceDir,
+      images,
       agents,
       debateRounds: /^\d+$/.test(debateRounds) ? Number(debateRounds) : NaN,
       ...(parsedTimeoutMs !== undefined ? { timeoutMs: parsedTimeoutMs } : {}),
@@ -209,6 +215,7 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
 async function handleChallenge({ args, config, engine, store, isInteractive }) {
   let [sessionId, objection, agentsCsv] = args;
   let targetAgents = parseAgentNames(agentsCsv);
+  let images = [];
 
   if (!sessionId && isInteractive) {
     sessionId = await pickSession(engine, "Elige el caso a cuestionar");
@@ -218,6 +225,9 @@ async function handleChallenge({ args, config, engine, store, isInteractive }) {
   if (sessionId && !objection && isInteractive) {
     objection = await askLine("Tu objeción o pregunta como juez (Enter para volver):");
     if (!objection) return;
+    const imagesInput = await askLine("Imágenes adjuntas (rutas separadas por coma, Enter para omitir):");
+    if (imagesInput === undefined) return;
+    images = parseImagePaths(imagesInput);
     const session = await engine.inspectCase(sessionId);
     const sessionAgents = Object.fromEntries(
       session.agents.map((name) => [name, config.agents[name] || { type: "agente" }])
@@ -240,6 +250,7 @@ async function handleChallenge({ args, config, engine, store, isInteractive }) {
     const session = await engine.challengeCase({
       sessionId,
       objection,
+      images,
       targetAgents,
       onAgentStart: (ev) => progress.start(ev),
       onAgentDone: (ev) => progress.done(ev),
@@ -356,6 +367,13 @@ async function pickSession(engine, title) {
 
 function parseAgentNames(names = "") {
   return names.split(",").map((name) => name.trim()).filter(Boolean);
+}
+
+function parseImagePaths(raw = "") {
+  return raw
+    .split(",")
+    .map((item) => item.trim().replace(/^['"]|['"]$/g, ""))
+    .filter(Boolean);
 }
 
 function printSavedSession(session, store) {

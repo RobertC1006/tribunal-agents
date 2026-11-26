@@ -7,6 +7,23 @@ import { Router } from "express";
 export function createCasesRouter(engine) {
   const router = Router();
 
+  // Servir adjuntos de imagen guardados en sesiones
+  router.get("/attachments/:filename", (req, res, next) => {
+    try {
+      const filePath = engine.store.getAttachmentPath(req.params.filename);
+      res.sendFile(filePath, (err) => {
+        if (err) {
+          if (err.code === "ENOENT") {
+            return res.status(404).json({ ok: false, error: "Adjunto no encontrado." });
+          }
+          next(err);
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Listar todas las sesiones dormidas/guardadas
   router.get("/", async (_req, res, next) => {
     try {
@@ -24,6 +41,8 @@ export function createCasesRouter(engine) {
         topic,
         context = "",
         workspaceDir = "",
+        images = [],
+        imageUploads = [],
         agents,
         includeDebateRound = true,
         debateRounds,
@@ -45,6 +64,11 @@ export function createCasesRouter(engine) {
         });
       }
 
+      const savedUploads = Array.isArray(imageUploads)
+        ? await Promise.all(imageUploads.map((item) => engine.store.saveAttachment(item)))
+        : [];
+      const allImages = [...(Array.isArray(images) ? images : []), ...savedUploads];
+
       const resolvedTimeoutMs =
         timeoutMs !== undefined
           ? timeoutMs
@@ -56,6 +80,7 @@ export function createCasesRouter(engine) {
         topic,
         context,
         workspaceDir,
+        images: allImages,
         agents,
         ...(debateRounds !== undefined ? { debateRounds } : { includeDebateRound }),
         ...(resolvedTimeoutMs !== undefined ? { timeoutMs: resolvedTimeoutMs } : {}),
@@ -86,7 +111,7 @@ export function createCasesRouter(engine) {
   // Despertar una sesión dormida para cuestionar el veredicto
   router.post("/:sessionId/cuestionar", async (req, res, next) => {
     try {
-      const { objection, targetAgents } = req.body || {};
+      const { objection, targetAgents, images = [], imageUploads = [] } = req.body || {};
 
       if (!objection || typeof objection !== "string") {
         return res.status(400).json({
@@ -105,9 +130,15 @@ export function createCasesRouter(engine) {
         });
       }
 
+      const savedUploads = Array.isArray(imageUploads)
+        ? await Promise.all(imageUploads.map((item) => engine.store.saveAttachment(item)))
+        : [];
+      const allImages = [...(Array.isArray(images) ? images : []), ...savedUploads];
+
       const session = await engine.challengeCase({
         sessionId: req.params.sessionId,
         objection,
+        images: allImages,
         targetAgents,
       });
 

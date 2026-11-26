@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { BaseAgent, parseAgentOutput } from "./baseAgent.js";
 
 /**
@@ -5,7 +6,7 @@ import { BaseAgent, parseAgentOutput } from "./baseAgent.js";
  * Usa fetch() nativo de Node.js sin librerías extra.
  */
 export class OllamaAgent extends BaseAgent {
-  async ask({ prompt, timeoutMs: overrideTimeoutMs }) {
+  async ask({ prompt, timeoutMs: overrideTimeoutMs, images = [] }) {
     const baseUrl = (this.config.baseUrl || "http://localhost:11434").replace(/\/$/, "");
     const model = this.config.model;
     const timeoutMs = overrideTimeoutMs || this.config.timeoutMs || 120000;
@@ -13,6 +14,10 @@ export class OllamaAgent extends BaseAgent {
     if (!model) {
       throw new Error(`OllamaAgent "${this.name}" requiere un campo 'model'.`);
     }
+
+    const encodedImages = images.length
+      ? await Promise.all(images.map(async (imgPath) => (await readFile(imgPath)).toString("base64")))
+      : undefined;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -25,6 +30,7 @@ export class OllamaAgent extends BaseAgent {
           model,
           prompt,
           stream: false,
+          ...(encodedImages ? { images: encodedImages } : {}),
         }),
         signal: controller.signal,
       });

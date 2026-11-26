@@ -10,7 +10,8 @@ RAZONAMIENTO: (tu explicación detallada para el usuario humano)
  * en lugar de arrastrar todo el historial gigante, inyecta la cápsula inicial
  * del problema + los resúmenes y disidencias de las rondas anteriores.
  */
-export function buildPrompt({ session, agent, roundType, objection = "" }) {
+export function buildPrompt({ session, agent, roundType, objection = "", images = [] }) {
+  const attachedImages = [...new Set([...(session.images || []), ...(images || [])])];
   const header = [
     `Eres el magistrado "${agent.name}" dentro de un Tribunal de Agentes.`,
     ...(agent.role ? [`Tu rol: ${agent.role}`] : []),
@@ -21,6 +22,9 @@ export function buildPrompt({ session, agent, roundType, objection = "" }) {
           `Directorio del proyecto a investigar: ${session.workspaceDir}`,
           "Instrucción de investigación: Puedes leer e inspeccionar los archivos del proyecto en modo solo lectura (sin modificar archivos) para fundamentar tu postura citando rutas o código real.",
         ]
+      : []),
+    ...(attachedImages.length
+      ? [`Imágenes adjuntas para inspeccionar: ${attachedImages.join(", ")}`]
       : []),
   ].join("\n");
 
