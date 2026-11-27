@@ -1,4 +1,4 @@
-import { BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { assertReadOnlyExtraArgs, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 /**
  * Módulo específico para Antigravity CLI (`agy`).
@@ -12,6 +12,13 @@ export class AgyAgent extends BaseAgent {
       args.push("--model", this.config.model);
     }
     const extraArgs = Array.isArray(this.config.extraArgs) ? this.config.extraArgs : [];
+    if (readOnly) {
+      assertReadOnlyExtraArgs(this.name, extraArgs, {
+        modeFlags: ["--mode"],
+        safeValue: "plan",
+        forbidden: ["--dangerously-skip-permissions"],
+      });
+    }
     const hasMode = extraArgs.some((arg) => arg === "--mode" || arg.startsWith("--mode="));
     if (readOnly && !hasMode) {
       args.push("--mode", "plan");

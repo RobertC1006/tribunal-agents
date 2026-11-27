@@ -102,11 +102,12 @@ test("si falla una ronda inesperadamente, la sesión no queda pegada en estado a
     });
 
     const created = await engine.openCase({ topic: "Prueba interrupción", debateRounds: 0 });
+    // El magistrado participa en el caso, pero su perfil desaparece: la ronda falla por dentro.
+    delete engine.config.agents.sim1;
     await assert.rejects(
       engine.challengeCase({
         sessionId: created.id,
-        objection: "Forzar error con agente inexistente",
-        targetAgents: ["no-existe"],
+        objection: "Forzar error con un perfil borrado",
       }),
       /no existe/,
     );

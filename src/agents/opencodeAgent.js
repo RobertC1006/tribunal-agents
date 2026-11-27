@@ -1,4 +1,4 @@
-import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { appendPromptArg, assertReadOnlyExtraArgs, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 /**
  * Módulo específico para OpenCode CLI (`opencode run`).
@@ -13,6 +13,9 @@ export class OpencodeAgent extends BaseAgent {
       args.push("-m", this.config.model);
     }
     const extraArgs = Array.isArray(this.config.extraArgs) ? this.config.extraArgs : [];
+    if (readOnly) {
+      assertReadOnlyExtraArgs(this.name, extraArgs, { modeFlags: ["--agent"], safeValue: "plan" });
+    }
     const hasAgent = extraArgs.some((arg) => arg === "--agent" || arg.startsWith("--agent="));
     if (readOnly && !hasAgent) {
       args.push("--agent", "plan");

@@ -1,4 +1,4 @@
-import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { appendPromptArg, assertReadOnlyExtraArgs, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 const CLAUDE_EFFORT_MAP = {
   low: "low",
@@ -23,6 +23,13 @@ export class ClaudeAgent extends BaseAgent {
     const mappedEffort = CLAUDE_EFFORT_MAP[String(this.config.reasoningEffort || "").toLowerCase()];
     if (mappedEffort && !hasEffort) {
       args.push("--effort", mappedEffort);
+    }
+    if (readOnly) {
+      assertReadOnlyExtraArgs(this.name, extraArgs, {
+        modeFlags: ["--permission-mode"],
+        safeValue: "plan",
+        forbidden: ["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"],
+      });
     }
     const hasPermissionMode = extraArgs.some((arg) => arg === "--permission-mode" || arg.startsWith("--permission-mode="));
     if (readOnly && !hasPermissionMode) {
