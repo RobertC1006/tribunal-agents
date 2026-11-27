@@ -21,14 +21,14 @@ Con `npx` no hace falta clonar nada: se descarga desde GitHub la primera vez. La
 
 ### 1. Claude Code (`claude`)
 ```bash
-claude mcp add --scope user agent-tribunal -- npx -y -p github:RobertC1006/tribunal-agents agent-tribunal-mcp
+claude mcp add --scope user agent-tribunal -- npx -y -p github:RobertC1006/tribunal-agents#v0.1.0 agent-tribunal-mcp
 ```
 
 ### 2. Codex (`~/.codex/config.toml`)
 ```toml
 [mcp_servers.agent-tribunal]
 command = "npx"
-args = ["-y", "-p", "github:RobertC1006/tribunal-agents", "agent-tribunal-mcp"]
+args = ["-y", "-p", "github:RobertC1006/tribunal-agents#v0.1.0", "agent-tribunal-mcp"]
 ```
 
 ### 3. Antigravity (`~/.gemini/antigravity/mcp_config.json`)
@@ -37,7 +37,7 @@ args = ["-y", "-p", "github:RobertC1006/tribunal-agents", "agent-tribunal-mcp"]
   "mcpServers": {
     "agent-tribunal": {
       "command": "npx",
-      "args": ["-y", "-p", "github:RobertC1006/tribunal-agents", "agent-tribunal-mcp"]
+      "args": ["-y", "-p", "github:RobertC1006/tribunal-agents#v0.1.0", "agent-tribunal-mcp"]
     }
   }
 }

@@ -7,6 +7,7 @@ import {
   agentColor,
   agentOptions,
   askLine,
+  askWorkspace,
   banner,
   colorize,
   createRoundProgress,
@@ -97,7 +98,7 @@ async function main() {
 }
 
 async function runMainMenu() {
-  console.log(`\n${banner("⚖️  Agent Tribunal", "Debate local multi-agente · sesiones auditables")}\n`);
+  console.log(`\n${banner("⚖️  Tribunal Agents", "Debate local multi-agente · sesiones auditables")}\n`);
 
   while (true) {
     const config = await loadConfig();
@@ -175,7 +176,7 @@ async function handleOpen({ args, config, engine, store, isInteractive }) {
     if (!topic) return null;
     context = await askLine("Contexto (opcional):");
     if (context === undefined) return null;
-    workspaceDir = await askLine("Ruta del código a inspeccionar (Enter para omitir):");
+    workspaceDir = await askWorkspace();
     if (workspaceDir === undefined) return null;
     const imagesInput = await askLine("Imágenes adjuntas (rutas separadas por coma, Enter para omitir):");
     if (imagesInput === undefined) return null;
@@ -508,7 +509,7 @@ function printRound(round, agents) {
 
 function printHelp() {
   console.log(`
-${banner("⚖️  Agent Tribunal", "CLI modular multi-agente")}
+${banner("⚖️  Tribunal Agents", "CLI modular multi-agente")}
 
 ${colorize("Modo sencillo (menú interactivo):", "1;96")}
   pnpm start

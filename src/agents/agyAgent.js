@@ -34,13 +34,27 @@ export class AgyAgent extends BaseAgent {
 
   async ask({ prompt, cwd, timeoutMs, readOnly = false, signal }) {
     const command = this.config.command || "agy";
-    const stdout = await runProcess({
-      command,
-      args: this.buildArgs(prompt, { readOnly }),
-      timeoutMs: timeoutMs || this.config.timeoutMs || 90000,
-      cwd,
-      signal,
-    });
-    return parseAgentOutput(stdout);
+    const request = readOnly
+      ? `${prompt}\n\nUsa las herramientas integradas de búsqueda y lectura de archivos. No ejecutes comandos de terminal ni corras pruebas. Si no puedes verificar algo, indícalo y responde con la información disponible.`
+      : prompt;
+    const args = this.buildArgs(request, { readOnly });
+    try {
+      const stdout = await runProcess({
+        command,
+        args,
+        timeoutMs: timeoutMs || this.config.timeoutMs || 90000,
+        cwd,
+        signal,
+      });
+      return parseAgentOutput(stdout);
+    } catch (error) {
+      if (/"command" permission that headless mode cannot prompt for/i.test(error.message)) {
+        throw new Error(
+          "Antigravity bloqueó un comando porque el modo no interactivo no puede pedir permiso. Pide una revisión de archivos en solo lectura. Si necesitas el resultado de un comando, ejecútalo tú e incluye su salida en el contexto.",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
   }
 }

@@ -180,7 +180,7 @@ test("API Express soporta debateRounds, expone model en /api/agentes y responde 
     assert.equal(uiRes.status, 200);
     assert.match(uiRes.headers.get("content-type") || "", /text\/html/);
     const html = await uiRes.text();
-    assert.match(html, /Agent Tribunal/);
+    assert.match(html, /<title>Tribunal Agents<\/title>/);
   } finally {
     await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
     await rm(tempDir, { recursive: true, force: true });

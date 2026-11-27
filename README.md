@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="Agent Tribunal" width="640" />
+  <img src="assets/banner.svg" alt="Tribunal Agents" width="640" />
 </p>
 
-# Agent Tribunal
+# Tribunal Agents
+
+**Demo local experimental · v0.1.0**
 
 Convoca a varios agentes de IA (Claude, Codex, Antigravity/`agy`, OpenCode y modelos locales con Ollama) para que debatan una decisión técnica, y tú haces de juez: lees sus posturas, las cuestionas y destacas lo importante. Cada agente es un **magistrado**.
 
@@ -13,7 +15,14 @@ Un caso funciona así:
 3. **Caso dormido.** El acta queda guardada en disco (JSON + Markdown) sin procesos en memoria.
 4. **Cuestionar o redebatir.** Cuando quieras, despiertas el caso con una objeción o una ronda más de debate.
 
-Los magistrados **nunca escriben archivos**: todos corren en modo de solo lectura. Pueden leer un proyecto si les das su carpeta.
+## Privacidad, seguridad y costes
+
+- **Carpetas y proveedores.** El tribunal solicita el modo de solo lectura de cada CLI. Los permisos y el aislamiento dependen de ese CLI. Si indicas una carpeta, los agentes con acceso a archivos pueden leer el código y otros datos, incluidos secretos. El contenido que un agente lee, el contexto y los adjuntos pueden llegar al proveedor que procesa su respuesta. Los resúmenes y los fragmentos destacados también se comparten con los participantes de rondas posteriores. Para la demo, usa una carpeta sin credenciales ni datos privados.
+- **Actas.** Los casos se guardan en JSON y Markdown sin cifrar. Pueden incluir rutas, objeciones y extractos de código. El visor también guarda en disco las imágenes que subes. Revisa el acta antes de compartirla.
+- **Costes.** Cada magistrado recibe una consulta en la apertura y otra en cada ronda en la que participa. Por ejemplo, dos agentes remotos con una ronda de debate hacen cuatro consultas, que pueden consumir cuota o generar cargos según tu plan. Los simuladores funcionan sin conexión y consultar un acta guardada no llama a ningún proveedor.
+- **Visor web.** Úsalo en `127.0.0.1`. Con `HOST=0.0.0.0` escucha en todas las interfaces IPv4, desactiva el filtro de `Host` y queda accesible sin autenticación. Quien pueda acceder podría abrir casos, consumir tu cuota y solicitar la inspección de carpetas con los permisos de tu usuario.
+
+Para reportar un problema en privado, consulta [SECURITY.md](SECURITY.md).
 
 ## Requisitos
 
@@ -31,14 +40,14 @@ Los magistrados **nunca escriben archivos**: todos corren en modo de solo lectur
 
 Las tres formas comparten los mismos casos y la misma configuración: puedes abrir un caso por MCP y cuestionarlo después desde la terminal o la web.
 
-> El paquete todavía no está publicado en npm. Los comandos `npx` de abajo lo instalan directamente desde GitHub (`github:RobertC1006/tribunal-agents`), y la primera vez tardan un poco más porque lo descargan.
+> Los comandos `npx` instalan la versión `v0.1.0` directamente desde GitHub. La primera vez tardan un poco más porque descargan el paquete.
 
 ## Como MCP en Claude Code
 
 Regístralo una vez para todos tus proyectos:
 
 ```bash
-claude mcp add --scope user agent-tribunal -- npx -y -p github:RobertC1006/tribunal-agents agent-tribunal-mcp
+claude mcp add --scope user agent-tribunal -- npx -y -p github:RobertC1006/tribunal-agents#v0.1.0 agent-tribunal-mcp
 ```
 
 Comprueba que aparece con `/mcp` dentro de Claude Code. Después basta con pedirlo en lenguaje natural, por ejemplo:
@@ -63,32 +72,34 @@ Para Codex y Antigravity, y el detalle de cada herramienta, consulta [src/mcp/RE
 ## Desde la terminal
 
 ```bash
-npx -y github:RobertC1006/tribunal-agents
+npx -y github:RobertC1006/tribunal-agents#v0.1.0
 ```
 
 Sin argumentos abre un menú interactivo para crear casos, ver o cuestionar los guardados y configurar tus agentes. También acepta comandos directos (los mismos de la [referencia de la CLI](#referencia-de-la-cli)):
 
 ```bash
-npx -y github:RobertC1006/tribunal-agents configurar   # elige agentes, modelos y tiempos
-npx -y github:RobertC1006/tribunal-agents abrir         # asistente para abrir un caso
+npx -y github:RobertC1006/tribunal-agents#v0.1.0 configurar   # elige agentes, modelos y tiempos
+npx -y github:RobertC1006/tribunal-agents#v0.1.0 abrir        # asistente para abrir un caso
 ```
+
+Al abrir un caso con el asistente puedes continuar sin carpeta, pegar su ruta o explorar las carpetas con las flechas desde el directorio donde ejecutaste el comando.
 
 Si lo vas a usar a menudo, instálalo una vez y usa el comando `agent-tribunal`:
 
 ```bash
-npm install -g github:RobertC1006/tribunal-agents
+npm install -g github:RobertC1006/tribunal-agents#v0.1.0
 agent-tribunal
 ```
 
 ## Visor web
 
 ```bash
-npx -y -p github:RobertC1006/tribunal-agents agent-tribunal-ui
+npx -y -p github:RobertC1006/tribunal-agents#v0.1.0 agent-tribunal-ui
 ```
 
 Abre `http://127.0.0.1:3000`. Ahí puedes leer las actas, abrir y cuestionar casos, adjuntar imágenes y seleccionar texto de un magistrado para pulsar «📌 Destacar». Cambia la dirección con las variables `HOST` y `PORT`.
 
-Por seguridad solo acepta peticiones dirigidas a `localhost`, `127.0.0.1`, `[::1]` o el nombre que pongas en `HOST`. Si lo expones con `HOST=0.0.0.0`, ten en cuenta que no tiene usuarios ni contraseñas.
+Consulta los límites de acceso del visor en [Privacidad, seguridad y costes](#privacidad-seguridad-y-costes).
 
 ## Configurar los agentes
 
@@ -127,7 +138,7 @@ Puedes cambiarlo con `TRIBUNAL_HOME` (carpeta de datos) o `TRIBUNAL_CONFIG` (rut
 
 Los cambios se aplican en el siguiente caso o ronda, sin reiniciar nada, también en el visor web y el MCP.
 
-> **agy (Antigravity):** en modo no interactivo no puede pedirte permiso para ejecutar comandos y los deniega. Si un encargo lo necesita (por ejemplo, correr pruebas), agy termina sin respuesta y el tribunal lo marca como error. Para permitirle comandos concretos, añádelos en `permissions.allow` de su `settings.json`.
+> El tribunal le pide a **agy (Antigravity)** que revise el proyecto con sus herramientas de búsqueda y lectura. Si intenta ejecutar un comando que requiere permiso, el modo no interactivo lo bloquea. Si el debate necesita el resultado de un comando, como la salida de las pruebas, puedes ejecutarlo y pegar el resultado en el contexto del caso. [Modo no interactivo de Antigravity](https://antigravity.google/docs/cli/headless/)
 
 ## Tiempos y rondas
 

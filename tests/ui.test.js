@@ -1,11 +1,44 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { PassThrough, Readable } from "node:stream";
 import { editConfig } from "../src/config/configEditor.js";
-import { agentColor, agentOptions } from "../src/terminal.js";
+import * as terminal from "../src/terminal.js";
+
+const { agentColor, agentOptions } = terminal;
+
+test("el selector de proyecto permite recorrer carpetas y confirmar una ruta con espacios", async (t) => {
+  const cwd = await mkdtemp(path.join(os.tmpdir(), "tribunal-folder-test-"));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const projectDir = path.join(cwd, "proyecto de prueba");
+  await mkdir(projectDir);
+  await writeFile(path.join(cwd, "archivo.txt"), "");
+
+  const input = new PassThrough();
+  const output = new PassThrough();
+  input.setRawMode = () => {};
+  output.cursorTo = output.moveCursor = output.clearScreenDown = () => {};
+  const press = (name) => input.emit("keypress", "", { name });
+  const waitForMenu = async (label) => {
+    for await (const chunk of output.iterator({ destroyOnReturn: false })) {
+      if (chunk.toString().includes(label)) return;
+    }
+  };
+
+  const selection = terminal.askWorkspace({ cwd, input, output });
+  press("down");
+  press("return");
+  await waitForMenu("proyecto de prueba");
+  press("down");
+  press("down");
+  press("return");
+  await waitForMenu(projectDir);
+  press("return");
+
+  assert.equal(await selection, projectDir);
+});
 
 test("agentColor diferencia agentes por proveedor (claude, codex, agy, ollama, mock)", () => {
   const agents = {

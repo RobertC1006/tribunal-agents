@@ -119,6 +119,34 @@ test("un agente que termina bien pero sin escribir nada queda como error, con su
   });
 });
 
+test("agy recibe instrucciones para inspeccionar archivos sin ejecutar comandos de terminal", async () => {
+  await withDir(async (dir) => {
+    const command = await fakeCli(dir, "agy", `console.log("RESUMEN: " + process.argv.at(-1).replace(/\\s+/g, " "));`);
+    const agent = createAgent("agy", { type: "agy", command });
+    const result = await agent.ask({ prompt: "Revisa el proyecto", cwd: dir, readOnly: true });
+
+    assert.match(result.summary, /Revisa el proyecto/);
+    assert.match(result.summary, /herramientas integradas de búsqueda y lectura/);
+    assert.match(result.summary, /No ejecutes comandos de terminal/);
+  });
+});
+
+test("agy explica qué hacer si Antigravity bloquea un comando en modo no interactivo", async () => {
+  await withDir(async (dir) => {
+    const command = await fakeCli(dir, "agy", `
+      process.stderr.write('jetski: no output produced — a tool required the "command" permission that headless mode cannot prompt for, so it was auto-denied. Alternatively, re-run with --dangerously-skip-permissions.');
+    `);
+    const agent = createAgent("agy", { type: "agy", command });
+
+    await assert.rejects(agent.ask({ prompt: "Revisa el proyecto", cwd: dir, readOnly: true }), (error) => {
+      assert.match(error.message, /Antigravity bloqueó un comando/);
+      assert.match(error.message, /incluye su salida en el contexto/);
+      assert.doesNotMatch(error.message, /--dangerously-skip-permissions/);
+      return true;
+    });
+  });
+});
+
 test("los agentes siempre corren en solo lectura, también sin carpeta de proyecto", async () => {
   await withDir(async (dir) => {
     const echo = await fakeCli(dir, "eco", 'console.log("RESUMEN: " + process.argv.slice(2, -1).join(" "));');

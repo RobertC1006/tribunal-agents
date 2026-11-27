@@ -14,6 +14,7 @@
     "assets/",
     "tribunal.config.default.json",
     "README.md",
+    "SECURITY.md",
     "LICENSE"
   ],
   "scripts": {

@@ -1,3 +1,5 @@
+import { readdir } from "node:fs/promises";
+import path from "node:path";
 import { createInterface, emitKeypressEvents } from "node:readline";
 
 const PROVIDER_COLORS = {
@@ -252,6 +254,39 @@ export function askLine(label, input = process.stdin, output = process.stdout) {
       reader.close();
     });
   });
+}
+
+export async function askWorkspace({ cwd = process.cwd(), input = process.stdin, output = process.stdout } = {}) {
+  const io = { input, output };
+  const choice = await select("Carpeta del proyecto", [
+    { value: "omit", label: "Continuar sin carpeta" },
+    { value: "browse", label: "Explorar carpetas" },
+    { value: "paste", label: "Pegar o escribir la ruta" },
+  ], io);
+  if (choice === "omit") return "";
+  if (choice === "paste") return askLine("Ruta del código a inspeccionar (Enter para omitir):", input, output);
+  if (!choice) return undefined;
+
+  let current = cwd;
+  const display = (name) => name.replace(/[\u0000-\u001f\u007f-\u009f]/g, "�");
+  while (true) {
+    const parent = path.dirname(current);
+    const entries = await readdir(current, { withFileTypes: true }).catch(() => {
+      output.write(`No se pudo listar la carpeta ${display(current)}.\n`);
+      return [];
+    });
+    const directories = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((left, right) => left.localeCompare(right));
+    const next = await select(`Carpeta actual · ${display(current)}`, [
+      { value: current, label: "Usar esta carpeta" },
+      ...(parent === current ? [] : [{ value: parent, label: "Subir a la carpeta superior" }]),
+      ...directories.map((name) => ({ value: path.join(current, name), label: display(name) })),
+    ], io);
+    if (next === undefined || next === current) return next;
+    current = next;
+  }
 }
 
 export function select(title, options, {
