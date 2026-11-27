@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,7 +11,11 @@ async function setup(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "tribunal-conc-"));
   try {
     const slow = path.join(dir, "lento");
-    await writeFile(slow, '#!/usr/bin/env node\nsetTimeout(() => console.log("RESUMEN: tarde"), 800);\n');
+    // Participa desde la apertura (responde al instante) y solo tarda al cuestionarlo.
+    await writeFile(
+      slow,
+      '#!/usr/bin/env node\nconst delay = process.argv.join(" ").includes("CUESTIONAMIENTO") ? 800 : 0;\nsetTimeout(() => console.log("RESUMEN: tarde"), delay);\n',
+    );
     await chmod(slow, 0o755);
     const config = {
       sessionsDir: path.join(dir, "sessions"),
@@ -20,7 +24,7 @@ async function setup(fn) {
     };
     const engineA = new TribunalEngine({ config, store: new SessionStore(config.sessionsDir) });
     const engineB = new TribunalEngine({ config, store: new SessionStore(config.sessionsDir) });
-    const session = await engineA.openCase({ topic: "Tema", debateRounds: 0 });
+    const session = await engineA.openCase({ topic: "Tema", agents: ["sim", "lento"], debateRounds: 0 });
     await fn({ engineA, engineB, session, store: engineA.store });
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -70,5 +74,16 @@ test("un candado abandonado por un proceso caído no bloquea para siempre", asyn
     await utimes(lockPath, old, old);
     const updated = await engineB.highlightCase({ sessionId: session.id, round: 1, agent: "sim", text: "sigue" });
     assert.equal(updated.highlights.length, 1);
+  });
+});
+
+test("un ID con ../ se rechaza sin tocar ningún .lock fuera de la carpeta de sesiones", async () => {
+  await setup(async ({ store }) => {
+    const outside = path.join(store.sessionsDir, "..", "yarn.lock");
+    await writeFile(outside, "contenido ajeno");
+    const old = new Date(Date.now() - 60_000);
+    await utimes(outside, old, old);
+    await assert.rejects(store.update("../yarn", () => {}), (error) => error.code === "INVALID_SESSION_ID");
+    assert.equal(await readFile(outside, "utf-8"), "contenido ajeno");
   });
 });

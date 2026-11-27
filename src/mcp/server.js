@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from "node:readline";
-import { loadConfig } from "../config/loadConfig.js";
-import { TribunalEngine } from "../engine/tribunalEngine.js";
+import { loadRuntime } from "../config/runtime.js";
 import { formatHighlight } from "../sessions/contextBuilder.js";
-import { SessionStore } from "../sessions/sessionStore.js";
 
 const TOOLS = [
   {
@@ -18,6 +16,11 @@ const TOOLS = [
         workspaceDir: {
           type: "string",
           description: "Ruta absoluta del proyecto que los agentes CLI pueden inspeccionar.",
+        },
+        images: {
+          type: "array",
+          items: { type: "string" },
+          description: "Rutas de imágenes (capturas, diagramas) que los magistrados verán en todas las rondas (opcional).",
         },
         agents: {
           type: "array",
@@ -53,6 +56,17 @@ const TOOLS = [
           type: "array",
           items: { type: "string" },
           description: "Subconjunto de agentes a consultar (opcional; por defecto todos los del caso).",
+        },
+        images: {
+          type: "array",
+          items: { type: "string" },
+          description: "Rutas de imágenes para esta objeción (opcional).",
+        },
+        timeoutSec: {
+          type: "integer",
+          minimum: 1,
+          maximum: 3600,
+          description: "Timeout por agente en segundos (opcional; por defecto el del caso).",
         },
       },
       required: ["sessionId", "objection"],
@@ -138,22 +152,6 @@ const TOOLS = [
   },
 ];
 
-let sharedRuntime = null;
-
-async function getRuntime() {
-  const config = await loadConfig();
-  if (!sharedRuntime) {
-    const store = new SessionStore(config.sessionsDir);
-    const engine = new TribunalEngine({ config, store });
-    sharedRuntime = { config, store, engine };
-  } else {
-    sharedRuntime.config = config;
-    sharedRuntime.store.sessionsDir = config.sessionsDir;
-    sharedRuntime.engine.config = config;
-  }
-  return sharedRuntime;
-}
-
 function formatSessionForMcp(session, store) {
   const lines = [
     `⚖️ **TRIBUNAL DE AGENTES · ${session.id}** (\`${session.status}\`)`,
@@ -195,8 +193,8 @@ function formatSessionForMcp(session, store) {
   return lines.join("\n");
 }
 
-async function handleToolCall(name, args = {}) {
-  const { config, store, engine } = await getRuntime();
+async function handleToolCall(name, args = {}, signal) {
+  const { config, store, engine } = await loadRuntime();
 
   if (name === "abrir_caso") {
     if (!args.topic || typeof args.topic !== "string") {
@@ -206,7 +204,9 @@ async function handleToolCall(name, args = {}) {
       topic: args.topic,
       context: args.context || "",
       workspaceDir: args.workspaceDir || "",
+      images: args.images,
       agents: args.agents,
+      signal,
       ...(args.debateRounds !== undefined ? { debateRounds: args.debateRounds } : {}),
       ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
@@ -220,7 +220,10 @@ async function handleToolCall(name, args = {}) {
     const session = await engine.challengeCase({
       sessionId: args.sessionId,
       objection: args.objection,
+      images: args.images,
       targetAgents: args.targetAgents,
+      signal,
+      ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
     return formatSessionForMcp(session, store);
   }
@@ -232,6 +235,7 @@ async function handleToolCall(name, args = {}) {
     const session = await engine.debateCase({
       sessionId: args.sessionId,
       targetAgents: args.targetAgents,
+      signal,
       ...(args.timeoutSec !== undefined ? { timeoutMs: args.timeoutSec * 1000 } : {}),
     });
     return formatSessionForMcp(session, store);
@@ -280,8 +284,16 @@ function send(message) {
   process.stdout.write(`${JSON.stringify(message)}\n`);
 }
 
+// Llamadas en curso, para que el cliente pueda cancelarlas (notifications/cancelled).
+const inFlight = new Map();
+
 async function handleRequest(msg) {
   const { id, method, params } = msg;
+
+  if (method === "notifications/cancelled") {
+    inFlight.get(params?.requestId)?.abort();
+    return;
+  }
 
   // Notificaciones (sin id) no llevan respuesta JSON-RPC
   if (id === undefined) return;
@@ -313,14 +325,18 @@ async function handleRequest(msg) {
     if (method === "tools/call") {
       const toolName = params?.name;
       const toolArgs = params?.arguments || {};
+      const controller = new AbortController();
+      inFlight.set(id, controller);
       try {
-        const text = await handleToolCall(toolName, toolArgs);
+        const text = await handleToolCall(toolName, toolArgs, controller.signal);
         send({
           jsonrpc: "2.0",
           id,
           result: { content: [{ type: "text", text }] },
         });
       } catch (toolError) {
+        // El protocolo pide no responder a una petición que el cliente canceló.
+        if (controller.signal.aborted) return;
         send({
           jsonrpc: "2.0",
           id,
@@ -329,6 +345,8 @@ async function handleRequest(msg) {
             isError: true,
           },
         });
+      } finally {
+        inFlight.delete(id);
       }
       return;
     }

@@ -51,7 +51,7 @@ export async function modelCatalog(profile) {
   }
   if (profile.type === "agy") {
     try {
-      const stdout = await runProcess({ command: profile.command || "agy", args: ["models"], timeoutMs: 7000 });
+      const stdout = await runProcess({ command: profile.command || "agy", args: ["models"], timeoutMs: 7000, allowEmptyOutput: true });
       const models = parseAgyModels(stdout);
       if (models.length) return models;
     } catch {
@@ -61,7 +61,7 @@ export async function modelCatalog(profile) {
   }
   if (profile.type === "opencode") {
     try {
-      const stdout = await runProcess({ command: profile.command || "opencode", args: ["models"], timeoutMs: 7000 });
+      const stdout = await runProcess({ command: profile.command || "opencode", args: ["models"], timeoutMs: 7000, allowEmptyOutput: true });
       return parseOpencodeModels(stdout);
     } catch {
       // Sin OpenCode instalado queda la entrada manual.

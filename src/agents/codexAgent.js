@@ -1,4 +1,4 @@
-import { appendPromptArg, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
+import { appendPromptArg, assertReadOnlyExtraArgs, BaseAgent, parseAgentOutput, runProcess } from "./baseAgent.js";
 
 const CODEX_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
 
@@ -17,6 +17,13 @@ export class CodexAgent extends BaseAgent {
     const effort = String(this.config.reasoningEffort || "").toLowerCase();
     if (CODEX_EFFORTS.has(effort) && !hasEffort) {
       args.push("-c", `model_reasoning_effort=${effort}`);
+    }
+    if (readOnly) {
+      assertReadOnlyExtraArgs(this.name, extraArgs, {
+        modeFlags: ["-s", "--sandbox"],
+        safeValue: "read-only",
+        forbidden: ["--full-auto", "--dangerously-bypass-approvals-and-sandbox", "--yolo"],
+      });
     }
     const hasSandbox = extraArgs.some((arg) => arg === "-s" || arg === "--sandbox" || arg.startsWith("--sandbox="));
     if (readOnly && !hasSandbox) {

@@ -1,17 +1,18 @@
 #!/usr/bin/env node
-import { loadConfig } from "../config/loadConfig.js";
-import { TribunalEngine } from "../engine/tribunalEngine.js";
-import { SessionStore } from "../sessions/sessionStore.js";
+import { loadRuntime } from "../config/runtime.js";
 import { createApp } from "./createApp.js";
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "127.0.0.1";
 
 async function startServer() {
-  const config = await loadConfig();
-  const store = new SessionStore(config.sessionsDir);
-  const engine = new TribunalEngine({ config, store });
-  const app = createApp({ config, engine });
+  // Se lee una vez al arrancar para fallar pronto si la configuración está rota;
+  // después cada petición vuelve a leerla, así un perfil nuevo funciona sin reiniciar.
+  await loadRuntime();
+  // Escuchando en todas las interfaces no se sabe con qué nombre llegarán: se desactiva el filtro de Host.
+  const isWildcard = ["0.0.0.0", "::", "[::]"].includes(HOST);
+  const allowedHosts = isWildcard ? null : ["localhost", "127.0.0.1", "[::1]", HOST];
+  const app = createApp({ loadRuntime, allowedHosts });
 
   app.listen(PORT, HOST, () => {
     console.log(`⚖️  Agent Tribunal (visor web + API) en http://${HOST}:${PORT}`);

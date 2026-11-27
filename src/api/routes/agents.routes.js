@@ -4,10 +4,11 @@ import { listSupportedAgentTypes } from "../../agents/registry.js";
 /**
  * Rutas para consultar los agentes configurados y los módulos disponibles.
  */
-export function createAgentsRouter(config) {
+export function createAgentsRouter() {
   const router = Router();
 
-  router.get("/", (_req, res) => {
+  router.get("/", (req, res) => {
+    const { config } = req.tribunal;
     const configured = Object.entries(config.agents).map(([name, cfg]) => ({
       name,
       type: cfg.type,

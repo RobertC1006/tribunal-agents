@@ -100,6 +100,8 @@ export class SessionStore {
    * reciente del disco; el candado solo se retiene durante ese paso breve.
    */
   async update(sessionId, mutate) {
+    // Antes de armar la ruta del candado: un ID con "../" crearía y borraría un .lock ajeno.
+    assertValidSessionId(sessionId);
     const lockPath = path.join(this.sessionsDir, `${sessionId}.lock`);
     await this.ensureDir();
     await acquireLock(lockPath);

@@ -64,6 +64,24 @@ export function parseAgentOutput(rawText) {
 }
 
 /**
+ * En solo lectura, un perfil no puede elegir otro modo de permisos ni saltarse los permisos:
+ * mejor que el magistrado falle con un mensaje claro a que escriba en el proyecto.
+ * `modeFlags` solo admiten `safeValue` (como `--flag valor` o `--flag=valor`).
+ */
+export function assertReadOnlyExtraArgs(agentName, extraArgs, { modeFlags, safeValue, forbidden = [] }) {
+  extraArgs.forEach((arg, index) => {
+    const [flag, inlineValue] = String(arg).split(/=(.*)/s);
+    const value = inlineValue ?? extraArgs[index + 1];
+    const conflict = forbidden.includes(flag) ? flag : modeFlags.includes(flag) && value !== safeValue ? `${flag} ${value}` : null;
+    if (conflict) {
+      throw new Error(
+        `El perfil "${agentName}" quita el modo de solo lectura con "${conflict}" en extraArgs. Los magistrados no pueden escribir; quítalo del perfil.`
+      );
+    }
+  });
+}
+
+/**
  * Añade el prompt como argumento posicional protegiéndolo con `--` si empieza por `-`.
  */
 export function appendPromptArg(args, prompt) {
@@ -84,6 +102,8 @@ export function runProcess({
   timeoutMs = 90000,
   killGraceMs = 2000,
   maxOutputBytes = 4 * 1024 * 1024,
+  // Un agente que sale con 0 sin escribir nada falló en silencio (p. ej. agy sin permiso).
+  allowEmptyOutput = false,
   input,
   cwd,
   signal,
@@ -146,14 +166,18 @@ export function runProcess({
       child.stdin.end(String(input));
     }
 
+    // El stream decodifica UTF-8 y guarda los bytes de una letra partida hasta el siguiente trozo.
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+
     const collect = (target, chunk) => {
-      totalBytes += chunk.length;
+      totalBytes += Buffer.byteLength(chunk);
       if (totalBytes > maxOutputBytes) {
         cleanupTimers();
         killProcess(new Error(`Salida excesiva (>${maxOutputBytes} bytes) ejecutando "${command}".`));
         return target;
       }
-      return target + chunk.toString("utf-8");
+      return target + chunk;
     };
 
     child.stdout.on("data", (chunk) => {
@@ -182,7 +206,9 @@ export function runProcess({
       cleanupTimers();
       if (!finished) {
         finished = true;
-        if (code === 0) {
+        if (code === 0 && !allowEmptyOutput && !stdout.trim()) {
+          reject(new Error(`"${command}" terminó sin respuesta${stderr.trim() ? `: ${stderr.trim()}` : "."}`));
+        } else if (code === 0) {
           resolve(stdout);
         } else {
           reject(

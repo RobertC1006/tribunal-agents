@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -182,6 +183,44 @@ test("API Express soporta debateRounds, expone model en /api/agentes y responde 
     assert.match(html, /Agent Tribunal/);
   } finally {
     await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("runProcess no rompe una letra con tilde que llega partida en dos trozos de salida", async () => {
+  // "á" son dos bytes en UTF-8: se envía solo el primero, y el resto 150 ms después.
+  const code = 'const b=Buffer.from("áñ");process.stdout.write(b.subarray(0,1));setTimeout(()=>process.stdout.write(b.subarray(1)),150);';
+  assert.equal(await runProcess({ command: process.execPath, args: ["-e", code] }), "áñ");
+});
+
+// fetch no garantiza enviar un Host propio; http.request sí.
+function getStatus(port, hostHeader) {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: "127.0.0.1", port, path: "/api/casos", headers: { host: hostHeader } }, (res) => {
+        res.resume();
+        resolve(res.statusCode);
+      })
+      .on("error", reject);
+  });
+}
+
+test("la API rechaza peticiones con un Host ajeno (DNS rebinding) y acepta los de loopback", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "tribunal-host-test-"));
+  const config = { sessionsDir: tempDir, defaultAgents: ["sim"], agents: { sim: { type: "mock" } } };
+  const engine = new TribunalEngine({ config, store: new SessionStore(tempDir) });
+  const server = await new Promise((resolve) => {
+    const instance = createApp({ config, engine }).listen(0, "127.0.0.1", () => resolve(instance));
+  });
+  try {
+    const { port } = server.address();
+    assert.equal(await getStatus(port, "evil.example"), 403);
+    assert.equal(await getStatus(port, `evil.example:${port}`), 403);
+    assert.equal(await getStatus(port, `localhost:${port}`), 200);
+    assert.equal(await getStatus(port, `127.0.0.1:${port}`), 200);
+    assert.equal(await getStatus(port, `[::1]:${port}`), 200);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
     await rm(tempDir, { recursive: true, force: true });
   }
 });

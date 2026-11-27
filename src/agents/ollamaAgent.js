@@ -23,33 +23,49 @@ export class OllamaAgent extends BaseAgent {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     const combinedSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
 
-    try {
-      const response = await fetch(`${baseUrl}/api/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model,
-          prompt,
-          stream: false,
-          ...(encodedImages ? { images: encodedImages } : {}),
-        }),
-        signal: combinedSignal,
-      });
+    // Solo el fallo de fetch es «no se pudo conectar»; un error HTTP o una respuesta vacía se dicen tal cual.
+    const describeAbort = (error) => {
+      if (signal?.aborted) {
+        const cancelled = new Error(`Consulta a Ollama (${model}) cancelada por el usuario.`);
+        cancelled.name = "AbortError";
+        return cancelled;
+      }
+      if (error.name === "AbortError") return new Error(`Timeout (${timeoutMs}ms) consultando Ollama (${model}).`);
+      return null;
+    };
 
+    try {
+      let response;
+      try {
+        response = await fetch(`${baseUrl}/api/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            prompt,
+            stream: false,
+            ...(encodedImages ? { images: encodedImages } : {}),
+          }),
+          signal: combinedSignal,
+        });
+      } catch (error) {
+        throw describeAbort(error) || new Error(`No se pudo conectar con Ollama en ${baseUrl} (${error.message}).`);
+      }
+
+      let body;
+      try {
+        body = await response.text();
+      } catch (error) {
+        throw describeAbort(error) || error;
+      }
       if (!response.ok) {
-        const body = await response.text();
         throw new Error(`Ollama respondió HTTP ${response.status}: ${body}`);
       }
-
-      const data = await response.json();
-      return parseAgentOutput(data.response || "");
-    } catch (error) {
-      if (error.name === "AbortError") {
-        throw new Error(`Timeout (${timeoutMs}ms) consultando Ollama (${model}).`);
+      const text = JSON.parse(body).response || "";
+      if (!text.trim()) {
+        throw new Error(`Ollama (${model}) terminó sin respuesta.`);
       }
-      throw new Error(
-        `No se pudo conectar con Ollama en ${baseUrl} (${error.message}).`
-      );
+      return parseAgentOutput(text);
     } finally {
       clearTimeout(timer);
     }

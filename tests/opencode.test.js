@@ -16,12 +16,13 @@ test("OpencodeAgent usa `opencode run` con modelo, imágenes y prompt protegido"
   ]);
 });
 
-test("OpencodeAgent usa el agente plan en solo lectura salvo que extraArgs elija otro", () => {
+test("OpencodeAgent usa el agente plan en solo lectura y rechaza que extraArgs elija otro", () => {
   const agent = createAgent("opencode", { type: "opencode" });
   assert.deepEqual(agent.buildArgs("hola", [], { readOnly: true }), ["run", "--agent", "plan", "hola"]);
 
+  // Los permisos de un agente propio como "revisor" no se pueden comprobar desde aquí.
   const custom = createAgent("opencode", { type: "opencode", extraArgs: ["--agent", "revisor"] });
-  assert.deepEqual(custom.buildArgs("hola", [], { readOnly: true }), ["run", "--agent", "revisor", "hola"]);
+  assert.throws(() => custom.buildArgs("hola", [], { readOnly: true }), /solo lectura.*--agent revisor/);
 });
 
 test("parseOpencodeModels lee la lista proveedor/modelo de `opencode models`", () => {

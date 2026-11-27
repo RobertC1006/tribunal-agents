@@ -4,12 +4,13 @@ import { Router } from "express";
  * Rutas REST para gestionar los casos del Tribunal.
  * Delega toda la lógica al motor (TribunalEngine) para mantener Express limpio.
  */
-export function createCasesRouter(engine) {
+export function createCasesRouter() {
   const router = Router();
 
   // Servir adjuntos de imagen guardados en sesiones
   router.get("/attachments/:filename", (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const filePath = engine.store.getAttachmentPath(req.params.filename);
       res.sendFile(filePath, (err) => {
         if (err) {
@@ -25,8 +26,9 @@ export function createCasesRouter(engine) {
   });
 
   // Listar todas las sesiones dormidas/guardadas
-  router.get("/", async (_req, res, next) => {
+  router.get("/", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const cases = await engine.listCases();
       res.json({ ok: true, data: cases });
     } catch (error) {
@@ -37,6 +39,7 @@ export function createCasesRouter(engine) {
   // Abrir un nuevo caso (Ronda 1 apertura + rondas de debate)
   router.post("/", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const {
         topic,
         context = "",
@@ -101,6 +104,7 @@ export function createCasesRouter(engine) {
   // Inspeccionar una sesión dormida sin gastar tokens (0 llamadas a IA)
   router.get("/:sessionId", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const session = await engine.inspectCase(req.params.sessionId);
       res.json({ ok: true, data: session });
     } catch (error) {
@@ -117,6 +121,7 @@ export function createCasesRouter(engine) {
   // Despertar una sesión dormida para cuestionar el veredicto
   router.post("/:sessionId/cuestionar", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const { objection, targetAgents, images = [], imageUploads = [] } = req.body || {};
 
       if (!objection || typeof objection !== "string") {
@@ -169,6 +174,7 @@ export function createCasesRouter(engine) {
   // Ejecutar una ronda adicional de réplica/debate sobre una sesión dormida
   router.post("/:sessionId/debatir", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const { targetAgents, timeoutMs, timeoutSec } = req.body || {};
 
       if (
@@ -215,6 +221,7 @@ export function createCasesRouter(engine) {
   // Fijar un fragmento de la respuesta de un agente para las siguientes rondas
   router.post("/:sessionId/destacados", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const { round, agent, text, note } = req.body || {};
       const session = await engine.highlightCase({ sessionId: req.params.sessionId, round, agent, text, note });
       res.status(201).json({ ok: true, data: session });
@@ -225,6 +232,7 @@ export function createCasesRouter(engine) {
 
   router.delete("/:sessionId/destacados/:highlightId", async (req, res, next) => {
     try {
+      const { engine } = req.tribunal;
       const session = await engine.removeHighlight(req.params);
       res.json({ ok: true, data: session });
     } catch (error) {

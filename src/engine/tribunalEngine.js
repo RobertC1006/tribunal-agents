@@ -373,6 +373,13 @@ export class TribunalEngine {
   async resumeCase(sessionId, targetAgents, roundOptions) {
     const session = await this.store.load(sessionId);
     const agentsToAsk = Array.isArray(targetAgents) && targetAgents.length > 0 ? targetAgents : session.agents;
+    // Antes del try: el contexto del caso solo llega a sus magistrados, y un rechazo no lo marca «interrumpida».
+    const outsiders = agentsToAsk.filter((name) => !session.agents.includes(name));
+    if (outsiders.length) {
+      throw badRequest(
+        `${outsiders.join(", ")} no participa en ${sessionId}. Magistrados del caso: ${session.agents.join(", ")}.`
+      );
+    }
     try {
       await this.runRound(session, { ...roundOptions, targetAgents: agentsToAsk });
       return await this.setStatus(sessionId, "dormida");
